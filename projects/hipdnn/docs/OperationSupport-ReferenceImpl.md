@@ -49,8 +49,8 @@ The following table lists all operations currently supported in the CPU Referenc
 | SDPA Backward | FP16, BFP16, FP32 | Op-defined | CPU Reference | See [SDPA Restrictions](#sdpa-restrictions) |
 | BlockScale Quantize | FP32, FP16, BFP16 in; FP8, FP6, FP4 out | Op-defined | CPU Reference | See [Block-Scale Quantization](#block-scale-quantization) |
 | BlockScale Dequantize | FP8, FP6, FP4 in; FP32, FP16, BFP16 out | Op-defined | CPU Reference | See [Block-Scale Quantization](#block-scale-quantization) |
-| Pointwise Unary | FP16, BFP16, FP32 | All | CPU Reference | `LOGICAL_NOT` is BOOLEAN only; `GEN_INDEX` outputs INT32 |
-| Pointwise Binary | FP16, BFP16, FP32 | All | CPU Reference | `CMP_*` outputs BOOLEAN and also accepts INT32 inputs; `LOGICAL_AND`/`LOGICAL_OR` are BOOLEAN only |
+| Pointwise Unary | FP16, BFP16, FP32 | All | CPU Reference | Mixed input/output pairs registered; `LOGICAL_NOT` is BOOLEAN only; `GEN_INDEX` outputs INT32; see [Pointwise Restrictions](#pointwise-restrictions) |
+| Pointwise Binary | FP16, BFP16, FP32 | All | CPU Reference | Mixed operand pairs registered; `CMP_*` outputs BOOLEAN and also accepts INT32 inputs; `LOGICAL_AND`/`LOGICAL_OR` are BOOLEAN only; see [Pointwise Restrictions](#pointwise-restrictions) |
 | Pointwise Ternary | FP16, BFP16, FP32 | All | CPU Reference | BINARY_SELECT with BOOLEAN mask; also accepts INT32 data inputs |
 
 ## Implementation Details
@@ -112,8 +112,11 @@ The following table lists all operations currently supported in the CPU Referenc
 | Operation Type | Plan Builder | Signature Key | Supported Operations |
 |----------------|-------------|---------------|---------------------|
 | Unary Operations | `PointwisePlanBuilder` | `PointwiseSignatureKey` | RELU_FWD, SIGMOID_FWD, TANH_FWD, ABS, NEG, GELU_FWD, GELU_APPROX_TANH_FWD, SWISH_FWD, IDENTITY, EXP, LOG, SQRT, RSQRT, RECIPROCAL, SIN, TAN, ERF, CEIL, FLOOR, ELU_FWD, SOFTPLUS_FWD, LOGICAL_NOT (BOOLEAN only), GEN_INDEX (INT32 output only) |
-| Binary Operations | `PointwisePlanBuilder` | `PointwiseSignatureKey` | ADD, SUB, MUL, DIV, ADD_SQUARE, MAX, MIN, CMP_EQ, CMP_NEQ, CMP_GT, CMP_GE, CMP_LT, CMP_LE, LOGICAL_AND (BOOLEAN only), LOGICAL_OR (BOOLEAN only), RELU_BWD, SIGMOID_BWD, TANH_BWD, GELU_BWD, GELU_APPROX_TANH_BWD, SWISH_BWD, ELU_BWD, SOFTPLUS_BWD |
+| Binary Operations | `PointwisePlanBuilder` | `PointwiseSignatureKey` | ADD, SUB, MUL, DIV, ADD_SQUARE, MAX_OP, MIN_OP, CMP_EQ, CMP_NEQ, CMP_GT, CMP_GE, CMP_LT, CMP_LE, LOGICAL_AND (BOOLEAN only), LOGICAL_OR (BOOLEAN only), RELU_BWD, SIGMOID_BWD, TANH_BWD, GELU_BWD, GELU_APPROX_TANH_BWD, SWISH_BWD, ELU_BWD, SOFTPLUS_BWD |
 | Ternary Operations | `PointwisePlanBuilder` | `PointwiseSignatureKey` | BINARY_SELECT (BOOLEAN mask) |
+
+The names are the `PointwiseMode` values of the serialized graph. The frontend spells `MAX_OP` and `MIN_OP`
+as `PointwiseMode::MAX` and `PointwiseMode::MIN`.
 
 `CMP_*` and `LOGICAL_*` outputs must have their tensor data type explicitly set to `BOOLEAN`, and
 `GEN_INDEX` outputs must be set to `INT32`; generic pointwise output inference otherwise uses the
@@ -127,6 +130,85 @@ Scalar attributes (`relu_*`, `swish_beta`, `elu_alpha`, `softplus_beta`) that a 
 ignored, as in cuDNN.
 
 ## Operation Restrictions
+
+### Pointwise Restrictions
+
+**Datatype tuples.** A node is accepted only for a registered tuple, and the key holds the mode, the datatype
+of every operand and of the output, and the node's compute datatype. Every mode in the two tables below accepts
+every tuple of its table.
+
+Unary modes other than `LOGICAL_NOT` and `GEN_INDEX`:
+
+| Input | Output | Compute |
+|-------|--------|---------|
+| FP32 | FP32 | FP32 |
+| FP16 | FP16 | FP32 |
+| BFP16 | BFP16 | FP32 |
+| FP32 | FP16 | FP32 |
+| FP32 | BFP16 | FP32 |
+
+Binary modes other than the `CMP_*` and `LOGICAL_*` ones:
+
+| First input | Second input | Output | Compute |
+|-------------|--------------|--------|---------|
+| FP32 | FP32 | FP32 | FP32 |
+| FP16 | FP16 | FP16 | FP16 |
+| BFP16 | BFP16 | BFP16 | BFP16 |
+| FP16 | FP16 | FP16 | FP32 |
+| BFP16 | BFP16 | BFP16 | FP32 |
+| FP16 | FP16 | FP32 | FP32 |
+| BFP16 | BFP16 | FP32 | FP32 |
+| FP16 | FP32 | FP32 | FP32 |
+| BFP16 | FP32 | FP32 | FP32 |
+| FP32 | FP16 | FP32 | FP32 |
+| FP32 | BFP16 | FP32 | FP32 |
+| FP32 | FP16 | FP32 | FP16 |
+| FP32 | BFP16 | FP32 | BFP16 |
+
+The last two rows have a 16-bit compute type and an FP32 output. They are the only tuples in this table whose
+compute type is narrower than their output.
+
+The other modes have FP32 compute and these tuples:
+
+- `CMP_*`: two inputs of one type, FP32, FP16, BFP16 or INT32, and a `BOOLEAN` output.
+- `LOGICAL_AND`, `LOGICAL_OR` and `LOGICAL_NOT`: `BOOLEAN` in and out.
+- `GEN_INDEX`: an FP32, FP16 or BFP16 input and an `INT32` output.
+- `BINARY_SELECT`: both data operands and the output of one type, FP32, FP16, BFP16 or INT32, and a `BOOLEAN`
+  mask.
+
+**Mixed-datatype tuples.** In unary modes the CPU reference narrows an FP32 input to FP16 or BFP16 but registers
+no conversion that widens a 16-bit input or goes between FP16 and BFP16. In binary modes it pairs an FP32
+operand with a 16-bit one, and two operands of the same 16-bit type may produce an FP32 output, but it never
+mixes FP16 with BFP16 in one node. The GPU reference registers the opposite set of mixes (see
+[GPU Reference Implementation - Operation Support](../../../dnn-providers/integration-tests/docs/OperationSupport-GpuReferenceImpl.md#pointwise-modes)),
+so neither reference's tuples contain the other's.
+
+**Compute datatype.** The CPU reference evaluates pointwise arithmetic in `double` and rounds once to the
+output type, whatever the compute type of the node says. The node's `compute_data_type` only has to match
+the compute column of a registered tuple, or the node is declined. The FP16 and BFP16 compute tuples above
+therefore run in `double` too, not in 16-bit arithmetic. The GPU reference computes in the node's compute type
+(FP32).
+
+**Parameters.**
+
+| Parameter | Used by | Default when unset |
+|-----------|---------|--------------------|
+| `relu_lower_clip` | `RELU_FWD`, `RELU_BWD` | 0 |
+| `relu_upper_clip` | `RELU_FWD`, `RELU_BWD` | largest finite value |
+| `relu_lower_clip_slope` | `RELU_FWD`, `RELU_BWD` | 0 |
+| `swish_beta` | `SWISH_FWD`, `SWISH_BWD` | 1 |
+| `elu_alpha` | `ELU_FWD`, `ELU_BWD` | 1 |
+| `softplus_beta` | `SOFTPLUS_FWD`, `SOFTPLUS_BWD` | 1 |
+
+A parameter a mode does not use is ignored. The GPU reference ignores one too, but it only reads the ReLU
+parameters and, for `SWISH_FWD`, `swish_beta`: it has no mode that uses the others.
+
+**Shapes and layouts.** Every tensor is addressed through its own strides, so channels-last (NHWC), mixed
+layouts across the operands and the output, and padded (non-packed) strides all work. Every input broadcasts
+to the output: right-aligned, each dimension equal to the output's or 1, and an input may have a lower rank
+than the output. There is no rank limit. The GPU reference addresses at most 5 dimensions
+(`GpuReferencePointwise::MAX_DIMS`) and declines a deeper pointwise node, so a graph with a 6-D or deeper
+output is only ever run by this reference.
 
 ### Reduction Modes
 
@@ -205,11 +287,18 @@ input with `FP32` scale for dequantize) are also registered.
 The integration test project selects this implementation with `--verification-mode cpu` (or as the last
 step of the default `auto` chain). The harness only registers bundles for CPU validation when every
 node type in the graph is in its CPU-required set. That set is a subset of the operations above:
-BatchNorm (all four variants), Layernorm (forward/backward), RMSNorm (forward/backward), Pointwise and
-SDPA Forward (see `ReferenceOpCoverage.cpp` in the integration test project). SDPA bundles are
+BatchNorm (all four variants), Layernorm (forward/backward), RMSNorm (forward/backward), Pointwise, and
+SDPA forward and backward (see `ReferenceOpCoverage.cpp` in the integration test project). SDPA bundles are
 additionally limited to `quick`-tier bundles with a bounded working set, to keep CPU time down. See the
 [integration test docs](../../../dnn-providers/integration-tests/docs/running-tests.md#verification-modes)
 for the verification modes.
+
+A graph is covered only when every one of its nodes is in the set, so a fused graph such as Convolution
+Forward + Pointwise is outside it. Convolution Forward and Matmul are not in the CPU set on purpose: no
+golden-bearing bundle uses them, and the CPU lane has a cost gate only for SDPA. The GPU lane is the fast route
+for them. It covers Convolution Forward, and covers Convolution Forward + Pointwise once Pointwise joins its
+set, which `TestPointwiseReferenceParity` requires as soon as the GPU reference accepts every pointwise graph
+this one does.
 
 ## Legend
 
