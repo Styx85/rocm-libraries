@@ -303,9 +303,11 @@ TEST(GPU_NaiveTimeout_FP32, CaptureAfterATimedOutNaiveEvaluationSucceeds)
     }
 }
 
+using CPU_NaiveTimeout_NONE = testing::TestWithParam<int>;
+
 // CPU-only: verify that MIOPEN_NAIVE_TIMEOUT can be set and read back via the debug
 // registry (the same path ScopedEnvironment uses in the GPU tests).
-TEST(CPU_NaiveTimeout_NONE, EnvVarRoundTrips)
+TEST_P(CPU_NaiveTimeout_NONE, EnvVarRoundTrips)
 {
     {
         ScopedEnvironment<bool> guard(MIOPEN_NAIVE_TIMEOUT, true);
@@ -316,3 +318,5 @@ TEST(CPU_NaiveTimeout_NONE, EnvVarRoundTrips)
         EXPECT_FALSE(lib_env::value<bool>(MIOPEN_NAIVE_TIMEOUT));
     }
 }
+
+INSTANTIATE_TEST_SUITE_P(Quick, CPU_NaiveTimeout_NONE, testing::Values(0));

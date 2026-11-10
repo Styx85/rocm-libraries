@@ -1127,7 +1127,7 @@ std::vector<CandidateSelectionParams> GenerateCandidateSelectionParams()
     };
 }
 
-INSTANTIATE_TEST_SUITE_P(Full,
+INSTANTIATE_TEST_SUITE_P(Comprehensive,
                          GPU_CandidateSelection_FP32,
                          ::testing::ValuesIn(GenerateCandidateSelectionParams()),
                          [](const ::testing::TestParamInfo<CandidateSelectionParams>& testInfo) {
@@ -1137,9 +1137,13 @@ INSTANTIATE_TEST_SUITE_P(Full,
                          });
 
 #else
+using CPU_CandidateSelectionDisabled_NONE = testing::TestWithParam<int>;
+
 // Add a dummy test when AI kernel tuning is disabled
-TEST(CPU_CandidateSelectionDisabled_NONE, FeatureDisabled)
+TEST_P(CPU_CandidateSelectionDisabled_NONE, FeatureDisabled)
 {
     GTEST_SKIP() << "AI candidate selection features are disabled in this build";
 }
+
+INSTANTIATE_TEST_SUITE_P(Quick, CPU_CandidateSelectionDisabled_NONE, testing::Values(0));
 #endif // MIOPEN_ENABLE_AI_KERNEL_TUNING

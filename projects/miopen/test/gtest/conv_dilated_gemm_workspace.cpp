@@ -347,7 +347,7 @@ TEST_P(GPU_ConvDilatedGemmWorkspaceBudget_FP32, NonDilatedWorkspaceIgnoresBudget
 #endif
 }
 
-INSTANTIATE_TEST_SUITE_P(Smoke,
+INSTANTIATE_TEST_SUITE_P(Quick,
                          GPU_ConvDilatedGemmWorkspaceBudget_FP32,
                          testing::Values(Direction::Forward,
                                          Direction::BackwardData,

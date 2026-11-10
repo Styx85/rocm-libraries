@@ -10,8 +10,10 @@
 using Config   = miopen::solver::conv::PerformanceConfigConvHipConv;
 using TestCase = miopen::unit_tests::ConvTestCase;
 
+using CPU_PerfConfig_ConvHipConv_NONE = testing::TestWithParam<int>;
+
 // A kernel label contains commas, which field-wise perf-config serialization would split on.
-TEST(CPU_PerfConfig_ConvHipConv_NONE, SerializeRoundTrip)
+TEST_P(CPU_PerfConfig_ConvHipConv_NONE, SerializeRoundTrip)
 {
     Config stored;
     stored.descriptor = "direct[tile_size_k=256,tile_size_n=1,tile_size_h=16,tile_size_w=16]";
@@ -20,6 +22,8 @@ TEST(CPU_PerfConfig_ConvHipConv_NONE, SerializeRoundTrip)
     ASSERT_TRUE(loaded.Deserialize(stored.ToString()));
     EXPECT_EQ(loaded.descriptor, stored.descriptor);
 }
+
+INSTANTIATE_TEST_SUITE_P(Quick, CPU_PerfConfig_ConvHipConv_NONE, testing::Values(0));
 
 // A perf-db record selects its config only under the hipconv minor version that wrote it.
 TEST(GPU_PerfConfig_ConvHipConv_FP16, VersionStamp)

@@ -143,7 +143,7 @@ TEST_P(CPU_WrapperRoutingParse_NONE, Maps)
         << "value=" << printed << " output=" << result.output;
 }
 
-INSTANTIATE_TEST_SUITE_P(Smoke,
+INSTANTIATE_TEST_SUITE_P(Quick,
                          CPU_WrapperRoutingParse_NONE,
                          ::testing::Values(
                              // Unset is the default path, and silent: a wrapper build must look
@@ -184,7 +184,9 @@ INSTANTIATE_TEST_SUITE_P(Smoke,
 // The table above pins which values produce output; these pin what it says.
 // ---------------------------------------------------------------------------
 
-TEST(CPU_WrapperRoutingReport_NONE, WarnsOnUnrecognizedValue)
+using CPU_WrapperRoutingReport_NONE = testing::TestWithParam<int>;
+
+TEST_P(CPU_WrapperRoutingReport_NONE, WarnsOnUnrecognizedValue)
 {
     const std::string report = Parse("enabeld").output;
     EXPECT_NE(report.find("Warning"), std::string::npos) << report;
@@ -193,7 +195,7 @@ TEST(CPU_WrapperRoutingReport_NONE, WarnsOnUnrecognizedValue)
     EXPECT_NE(report.find(kForwardingEnvVar), std::string::npos) << report;
 }
 
-TEST(CPU_WrapperRoutingReport_NONE, AnnouncesForwardingWhenEnabled)
+TEST_P(CPU_WrapperRoutingReport_NONE, AnnouncesForwardingWhenEnabled)
 {
     const std::string report = Parse("enabled").output;
     // Not a warning: the user asked for this and got it.
@@ -207,13 +209,15 @@ TEST(CPU_WrapperRoutingReport_NONE, AnnouncesForwardingWhenEnabled)
 // build's own set.
 // ---------------------------------------------------------------------------
 
-TEST(CPU_WrapperRoutingForwardingSet_NONE, MatchesInjectedMembers)
+using CPU_WrapperRoutingForwardingSet_NONE = testing::TestWithParam<int>;
+
+TEST_P(CPU_WrapperRoutingForwardingSet_NONE, MatchesInjectedMembers)
 {
     EXPECT_TRUE(IsInForwardingSet("miopenConvolutionForward", kTestSet));
     EXPECT_TRUE(IsInForwardingSet("miopenCreate", kTestSet));
 }
 
-TEST(CPU_WrapperRoutingForwardingSet_NONE, RejectsNonMembers)
+TEST_P(CPU_WrapperRoutingForwardingSet_NONE, RejectsNonMembers)
 {
     EXPECT_FALSE(IsInForwardingSet("miopenGetVersion", kTestSet));
     EXPECT_FALSE(IsInForwardingSet("miopenDestroy", kTestSet));
@@ -224,7 +228,7 @@ TEST(CPU_WrapperRoutingForwardingSet_NONE, RejectsNonMembers)
     EXPECT_FALSE(IsInForwardingSet(nullptr, kTestSet));
 }
 
-TEST(CPU_WrapperRoutingForwardingSet_NONE, EmptySetMatchesNothing)
+TEST_P(CPU_WrapperRoutingForwardingSet_NONE, EmptySetMatchesNothing)
 {
     const ForwardingSet empty;
     EXPECT_TRUE(empty.empty());
@@ -233,7 +237,7 @@ TEST(CPU_WrapperRoutingForwardingSet_NONE, EmptySetMatchesNothing)
 
 // Adding an entry point to the build's forwarding set has to break this test,
 // so the addition is deliberate rather than silent.
-TEST(CPU_WrapperRoutingForwardingSet_NONE, DefaultSetIsTheConvolutionFamily)
+TEST_P(CPU_WrapperRoutingForwardingSet_NONE, DefaultSetIsTheConvolutionFamily)
 {
     EXPECT_EQ(DefaultForwardingSet().size(), 4u);
     EXPECT_TRUE(IsInForwardingSet("miopenConvolutionForward"));
@@ -249,6 +253,8 @@ TEST(CPU_WrapperRoutingForwardingSet_NONE, DefaultSetIsTheConvolutionFamily)
     EXPECT_FALSE(IsInForwardingSet("miopenSetTensorDescriptor"));
     EXPECT_FALSE(IsInForwardingSet("miopenCreate"));
 }
+
+INSTANTIATE_TEST_SUITE_P(Quick, CPU_WrapperRoutingForwardingSet_NONE, testing::Values(0));
 
 // ---------------------------------------------------------------------------
 // ResolveRoute: (mode, entryPoint, set) -> Route. The injected set is what makes
@@ -280,7 +286,7 @@ TEST_P(CPU_WrapperRoutingResolve_NONE, Decides)
 }
 
 INSTANTIATE_TEST_SUITE_P(
-    Smoke,
+    Quick,
     CPU_WrapperRoutingResolve_NONE,
     ::testing::Values(
         // The kill switch: Disabled routes everything to MIOpen, set membership
@@ -297,14 +303,18 @@ INSTANTIATE_TEST_SUITE_P(
         ResolveCase{ForwardingMode::Enabled, "miopenDestroy", Route::Miopen},
         ResolveCase{ForwardingMode::Enabled, "", Route::Miopen}));
 
+using CPU_WrapperRoutingResolveDefault_NONE = testing::TestWithParam<int>;
+
 // Kept separate from the injected-set cases so the difference between "the logic
 // works" and "this build forwards these four names" stays explicit.
-TEST(CPU_WrapperRoutingResolve_NONE, DefaultSetRoutesTheConvolutionFamily)
+TEST_P(CPU_WrapperRoutingResolveDefault_NONE, DefaultSetRoutesTheConvolutionFamily)
 {
     EXPECT_EQ(ResolveRoute(ForwardingMode::Enabled, "miopenConvolutionForward"), Route::Hipdnn);
     EXPECT_EQ(ResolveRoute(ForwardingMode::Enabled, "miopenSetTensorDescriptor"), Route::Miopen);
     EXPECT_EQ(ResolveRoute(ForwardingMode::Disabled, "miopenConvolutionForward"), Route::Miopen);
 }
+
+INSTANTIATE_TEST_SUITE_P(Quick, CPU_WrapperRoutingResolveDefault_NONE, testing::Values(0));
 
 // ---------------------------------------------------------------------------
 // ParseDisabledSet: raw MIOPEN_DISABLE_HIPDNN_FOR value -> deny list.
@@ -353,7 +363,7 @@ TEST_P(CPU_WrapperRoutingDisabledSet_NONE, Parses)
 }
 
 INSTANTIATE_TEST_SUITE_P(
-    Smoke,
+    Quick,
     CPU_WrapperRoutingDisabledSet_NONE,
     ::testing::Values(
         // Unset and empty disable nothing, silently.
@@ -379,7 +389,9 @@ INSTANTIATE_TEST_SUITE_P(
         DisabledCase{"miopenConvolutionForwardBias", false, false, false, true},
         DisabledCase{"miopenConvolutionForwar", false, false, false, true}));
 
-TEST(CPU_WrapperRoutingDisabledSet_NONE, WarningNamesTheVariableAndTheValue)
+using CPU_WrapperRoutingDisabledSetReport_NONE = testing::TestWithParam<int>;
+
+TEST_P(CPU_WrapperRoutingDisabledSetReport_NONE, WarningNamesTheVariableAndTheValue)
 {
     const std::string report = ParseDisabled("miopenGetVersion").output;
     EXPECT_NE(report.find("Warning"), std::string::npos) << report;
@@ -387,11 +399,13 @@ TEST(CPU_WrapperRoutingDisabledSet_NONE, WarningNamesTheVariableAndTheValue)
     EXPECT_NE(report.find("miopenGetVersion"), std::string::npos) << report;
 }
 
-TEST(CPU_WrapperRoutingDisabledSet_NONE, MatchesNothingWhenAskedAboutNull)
+TEST_P(CPU_WrapperRoutingDisabledSetReport_NONE, MatchesNothingWhenAskedAboutNull)
 {
     EXPECT_FALSE(ParseDisabled("*").set.Contains(nullptr));
     EXPECT_FALSE(ParseDisabled("miopenCreate").set.Contains(nullptr));
 }
+
+INSTANTIATE_TEST_SUITE_P(Quick, CPU_WrapperRoutingDisabledSetReport_NONE, testing::Values(0));
 
 // ---------------------------------------------------------------------------
 // ResolveRouteWithReason: every reason the seam can report.
@@ -405,7 +419,9 @@ RouteDecision Resolve(ForwardingMode mode,
     return ResolveRouteWithReason(mode, entryPoint, kTestSet, disabled, hipdnnAvailable);
 }
 
-TEST(CPU_WrapperRoutingReason_NONE, ForwardingOff)
+using CPU_WrapperRoutingReason_NONE = testing::TestWithParam<int>;
+
+TEST_P(CPU_WrapperRoutingReason_NONE, ForwardingOff)
 {
     const RouteDecision d =
         Resolve(ForwardingMode::Disabled, "miopenConvolutionForward", DisabledSet(), true);
@@ -413,7 +429,7 @@ TEST(CPU_WrapperRoutingReason_NONE, ForwardingOff)
     EXPECT_EQ(d.reason, RouteReason::ForwardingOff);
 }
 
-TEST(CPU_WrapperRoutingReason_NONE, NotInForwardingSet)
+TEST_P(CPU_WrapperRoutingReason_NONE, NotInForwardingSet)
 {
     const RouteDecision d =
         Resolve(ForwardingMode::Enabled, "miopenGetVersion", DisabledSet(), true);
@@ -421,7 +437,7 @@ TEST(CPU_WrapperRoutingReason_NONE, NotInForwardingSet)
     EXPECT_EQ(d.reason, RouteReason::NotInForwardingSet);
 }
 
-TEST(CPU_WrapperRoutingReason_NONE, DisabledByEnvName)
+TEST_P(CPU_WrapperRoutingReason_NONE, DisabledByEnvName)
 {
     const DisabledSet disabled = ParseDisabled("miopenConvolutionForward").set;
     const RouteDecision d =
@@ -434,7 +450,7 @@ TEST(CPU_WrapperRoutingReason_NONE, DisabledByEnvName)
               RouteReason::InForwardingSet);
 }
 
-TEST(CPU_WrapperRoutingReason_NONE, DisabledByEnvStar)
+TEST_P(CPU_WrapperRoutingReason_NONE, DisabledByEnvStar)
 {
     const DisabledSet disabled = ParseDisabled("*").set;
     const RouteDecision d =
@@ -446,7 +462,7 @@ TEST(CPU_WrapperRoutingReason_NONE, DisabledByEnvStar)
 // The one case where the route stays on hipDNN despite something being wrong.
 // Routing back to MIOpen here would turn a broken hipDNN installation into
 // results that look correct, which is exactly what this design exists to avoid.
-TEST(CPU_WrapperRoutingReason_NONE, HipdnnUnavailableStillRoutesAwayFromMiopen)
+TEST_P(CPU_WrapperRoutingReason_NONE, HipdnnUnavailableStillRoutesAwayFromMiopen)
 {
     const RouteDecision d = Resolve(
         ForwardingMode::Enabled, "miopenConvolutionForward", DisabledSet(), /*available=*/false);
@@ -456,7 +472,7 @@ TEST(CPU_WrapperRoutingReason_NONE, HipdnnUnavailableStillRoutesAwayFromMiopen)
 
 // An unavailable hipDNN does not override the earlier reasons: a call that was
 // never going to be forwarded is not reported as a hipDNN problem.
-TEST(CPU_WrapperRoutingReason_NONE, UnavailableIsCheckedLast)
+TEST_P(CPU_WrapperRoutingReason_NONE, UnavailableIsCheckedLast)
 {
     EXPECT_EQ(
         Resolve(ForwardingMode::Disabled, "miopenConvolutionForward", DisabledSet(), false).reason,
@@ -469,7 +485,7 @@ TEST(CPU_WrapperRoutingReason_NONE, UnavailableIsCheckedLast)
         RouteReason::DisabledByEnv);
 }
 
-TEST(CPU_WrapperRoutingReason_NONE, InForwardingSet)
+TEST_P(CPU_WrapperRoutingReason_NONE, InForwardingSet)
 {
     const RouteDecision d =
         Resolve(ForwardingMode::Enabled, "miopenConvolutionForward", DisabledSet(), true);
@@ -477,12 +493,14 @@ TEST(CPU_WrapperRoutingReason_NONE, InForwardingSet)
     EXPECT_EQ(d.reason, RouteReason::InForwardingSet);
 }
 
+INSTANTIATE_TEST_SUITE_P(Quick, CPU_WrapperRoutingReason_NONE, testing::Values(0));
+
 // ---------------------------------------------------------------------------
 // The trace line. Its shape is what a user reads to find out why a call went
 // where it did, so it is asserted rather than left to drift.
 // ---------------------------------------------------------------------------
 
-TEST(CPU_WrapperRoutingReport_NONE, TraceLineNamesEntryPointModeRouteAndReason)
+TEST_P(CPU_WrapperRoutingReport_NONE, TraceLineNamesEntryPointModeRouteAndReason)
 {
     std::ostringstream os;
     miopen::wrapper::ReportRouteDecision("miopenConvolutionForward",
@@ -496,7 +514,7 @@ TEST(CPU_WrapperRoutingReport_NONE, TraceLineNamesEntryPointModeRouteAndReason)
     EXPECT_NE(line.find("reason=in-forwarding-set"), std::string::npos) << line;
 }
 
-TEST(CPU_WrapperRoutingReport_NONE, TraceLineHandlesANullEntryPoint)
+TEST_P(CPU_WrapperRoutingReport_NONE, TraceLineHandlesANullEntryPoint)
 {
     std::ostringstream os;
     miopen::wrapper::ReportRouteDecision(
@@ -530,7 +548,7 @@ protected:
     }
 };
 
-TEST(CPU_WrapperRoutingReport_NONE, TraceLineIsOneWrite)
+TEST_P(CPU_WrapperRoutingReport_NONE, TraceLineIsOneWrite)
 {
     WriteCountingBuf buf;
     std::ostream os(&buf);
@@ -543,7 +561,7 @@ TEST(CPU_WrapperRoutingReport_NONE, TraceLineIsOneWrite)
     EXPECT_EQ(buf.text.find('\n'), buf.text.size() - 1) << buf.text;
 }
 
-TEST(CPU_WrapperRoutingReport_NONE, ForwardedCallLineIsOneWrite)
+TEST_P(CPU_WrapperRoutingReport_NONE, ForwardedCallLineIsOneWrite)
 {
     WriteCountingBuf buf;
     std::ostream os(&buf);
@@ -552,19 +570,23 @@ TEST(CPU_WrapperRoutingReport_NONE, ForwardedCallLineIsOneWrite)
     EXPECT_EQ(buf.text, "[MIOpen] hipDNN forwarded: miopenConvolutionForward\n");
 }
 
-TEST(CPU_WrapperRoutingReport_NONE, ForwardedCallLineHandlesANullEntryPoint)
+TEST_P(CPU_WrapperRoutingReport_NONE, ForwardedCallLineHandlesANullEntryPoint)
 {
     std::ostringstream os;
     miopen::wrapper::ReportForwardedCall(nullptr, os);
     EXPECT_EQ(os.str(), "[MIOpen] hipDNN forwarded: <null>\n");
 }
 
+INSTANTIATE_TEST_SUITE_P(Quick, CPU_WrapperRoutingReport_NONE, testing::Values(0));
+
 // ---------------------------------------------------------------------------
 // MIOPEN_LOG_LEVEL. Parsed the way MIOpen parses it, so the wrapper's trace and
 // error lines switch on at the same values as MIOpen's own.
 // ---------------------------------------------------------------------------
 
-TEST(CPU_WrapperRoutingLogLevel_NONE, ParsesLikeMiopen)
+using CPU_WrapperRoutingLogLevel_NONE = testing::TestWithParam<int>;
+
+TEST_P(CPU_WrapperRoutingLogLevel_NONE, ParsesLikeMiopen)
 {
     using miopen::wrapper::ParseLogLevel;
     EXPECT_EQ(ParseLogLevel(nullptr), 0ULL);
@@ -588,7 +610,7 @@ constexpr unsigned long long Level(miopen::LoggingLevel level)
     return static_cast<unsigned long long>(level);
 }
 
-TEST(CPU_WrapperRoutingLogLevel_NONE, TracesFromInfo2Up)
+TEST_P(CPU_WrapperRoutingLogLevel_NONE, TracesFromInfo2Up)
 {
     using miopen::LoggingLevel;
     using miopen::wrapper::RouteTraceEnabledFor;
@@ -598,7 +620,7 @@ TEST(CPU_WrapperRoutingLogLevel_NONE, TracesFromInfo2Up)
     EXPECT_TRUE(RouteTraceEnabledFor(Level(LoggingLevel::Trace)));
 }
 
-TEST(CPU_WrapperRoutingLogLevel_NONE, RouteTraceNarrowsTheLevelToIntLikeMiopen)
+TEST_P(CPU_WrapperRoutingLogLevel_NONE, RouteTraceNarrowsTheLevelToIntLikeMiopen)
 {
     using miopen::wrapper::RouteTraceEnabledFor;
     // MIOpen reads -1 as negative, which is below every level.
@@ -608,7 +630,7 @@ TEST(CPU_WrapperRoutingLogLevel_NONE, RouteTraceNarrowsTheLevelToIntLikeMiopen)
     EXPECT_FALSE(RouteTraceEnabledFor(0x100000002ULL));
 }
 
-TEST(CPU_WrapperRoutingLogLevel_NONE, ErrorsShownOnlyAtDefaultAndFromErrorUp)
+TEST_P(CPU_WrapperRoutingLogLevel_NONE, ErrorsShownOnlyAtDefaultAndFromErrorUp)
 {
     using miopen::LoggingLevel;
     using miopen::wrapper::ErrorLoggingEnabledFor;
@@ -620,7 +642,7 @@ TEST(CPU_WrapperRoutingLogLevel_NONE, ErrorsShownOnlyAtDefaultAndFromErrorUp)
     EXPECT_TRUE(ErrorLoggingEnabledFor(Level(LoggingLevel::Trace)));
 }
 
-TEST(CPU_WrapperRoutingLogLevel_NONE, ErrorsNarrowTheLevelToIntLikeMiopen)
+TEST_P(CPU_WrapperRoutingLogLevel_NONE, ErrorsNarrowTheLevelToIntLikeMiopen)
 {
     using miopen::wrapper::ErrorLoggingEnabledFor;
     // MIOpen reads -1 as negative and prints nothing, errors included.
@@ -630,11 +652,15 @@ TEST(CPU_WrapperRoutingLogLevel_NONE, ErrorsNarrowTheLevelToIntLikeMiopen)
     EXPECT_TRUE(ErrorLoggingEnabledFor(0x100000003ULL));
 }
 
+INSTANTIATE_TEST_SUITE_P(Quick, CPU_WrapperRoutingLogLevel_NONE, testing::Values(0));
+
 // ---------------------------------------------------------------------------
 // The guard that keeps a stub from dispatching under a neighbour's name.
 // ---------------------------------------------------------------------------
 
-TEST(CPU_WrapperRoutingStubName_NONE, MatchesOnlyTheSameName)
+using CPU_WrapperRoutingStubName_NONE = testing::TestWithParam<int>;
+
+TEST_P(CPU_WrapperRoutingStubName_NONE, MatchesOnlyTheSameName)
 {
     EXPECT_TRUE(EntryPointNameMatches("miopenCreate", "miopenCreate"));
     EXPECT_FALSE(EntryPointNameMatches("miopenCreate", "miopenDestroy"));
@@ -644,12 +670,14 @@ TEST(CPU_WrapperRoutingStubName_NONE, MatchesOnlyTheSameName)
     EXPECT_FALSE(EntryPointNameMatches(nullptr, nullptr));
 }
 
-TEST(CPU_WrapperRoutingStubName_NONE, DispatchFromStubAgreesWithDispatch)
+TEST_P(CPU_WrapperRoutingStubName_NONE, DispatchFromStubAgreesWithDispatch)
 {
     // __func__ here is not an entry-point name, so pass the name twice to
     // satisfy DispatchFromStub's assertion.
     EXPECT_EQ(DispatchFromStub("miopenCreate", "miopenCreate"), Dispatch("miopenCreate"));
 }
+
+INSTANTIATE_TEST_SUITE_P(Quick, CPU_WrapperRoutingStubName_NONE, testing::Values(0));
 
 // ---------------------------------------------------------------------------
 // The process-global path.
@@ -672,7 +700,7 @@ TEST_P(CPU_WrapperRoutingDispatch_NONE, AgreesWithResolveRoute)
         << "entryPoint=" << entryPoint;
 }
 
-INSTANTIATE_TEST_SUITE_P(Smoke,
+INSTANTIATE_TEST_SUITE_P(Quick,
                          CPU_WrapperRoutingDispatch_NONE,
                          ::testing::Values("miopenConvolutionForward",
                                            "miopenCreate",
@@ -690,7 +718,7 @@ TEST_P(CPU_WrapperRoutingDispatchUnforwarded_NONE, RoutesToMiopen)
     EXPECT_EQ(Dispatch(entryPoint), Route::Miopen) << "entryPoint=" << entryPoint;
 }
 
-INSTANTIATE_TEST_SUITE_P(Smoke,
+INSTANTIATE_TEST_SUITE_P(Quick,
                          CPU_WrapperRoutingDispatchUnforwarded_NONE,
                          ::testing::Values("miopenCreate", "miopenGetErrorString"));
 
@@ -701,7 +729,9 @@ INSTANTIATE_TEST_SUITE_P(Smoke,
 
 namespace hipdnn = miopen::wrapper::hipdnn;
 
-TEST(CPU_WrapperRoutingLastError_NONE, PrefixesTheForwardedFailure)
+using CPU_WrapperRoutingLastError_NONE = testing::TestWithParam<int>;
+
+TEST_P(CPU_WrapperRoutingLastError_NONE, PrefixesTheForwardedFailure)
 {
     testing::internal::CaptureStderr();
     hipdnn::RecordFailure(miopenStatusUnsupportedOp, "hipDNN's reason");
@@ -715,7 +745,7 @@ TEST(CPU_WrapperRoutingLastError_NONE, PrefixesTheForwardedFailure)
 }
 
 // MIOpen's strings live for the whole process, so a caller may keep the pointer.
-TEST(CPU_WrapperRoutingLastError_NONE, KeptTextOutlivesLaterFailuresAndItsThread)
+TEST_P(CPU_WrapperRoutingLastError_NONE, KeptTextOutlivesLaterFailuresAndItsThread)
 {
     testing::internal::CaptureStderr();
     hipdnn::RecordFailure(miopenStatusUnsupportedOp, "first reason");
@@ -739,7 +769,7 @@ TEST(CPU_WrapperRoutingLastError_NONE, KeptTextOutlivesLaterFailuresAndItsThread
     EXPECT_STREQ(fromExitedThread, "[hipDNN-forwarded] thread");
 }
 
-TEST(CPU_WrapperRoutingLastError_NONE, IgnoresADifferentStatus)
+TEST_P(CPU_WrapperRoutingLastError_NONE, IgnoresADifferentStatus)
 {
     hipdnn::RecordFailure(miopenStatusUnsupportedOp, "hipDNN's reason");
     const char* const prefixed = hipdnn::PrefixedErrorString(miopenStatusBadParm, "native");
@@ -748,7 +778,7 @@ TEST(CPU_WrapperRoutingLastError_NONE, IgnoresADifferentStatus)
     EXPECT_EQ(prefixed, nullptr) << prefixed;
 }
 
-TEST(CPU_WrapperRoutingLastError_NONE, ClearedFailureIsNotPrefixed)
+TEST_P(CPU_WrapperRoutingLastError_NONE, ClearedFailureIsNotPrefixed)
 {
     hipdnn::RecordFailure(miopenStatusUnsupportedOp, "hipDNN's reason");
     hipdnn::ClearForwardedFailure();
@@ -756,7 +786,7 @@ TEST(CPU_WrapperRoutingLastError_NONE, ClearedFailureIsNotPrefixed)
     EXPECT_EQ(hipdnn::PrefixedErrorString(miopenStatusUnsupportedOp, "native"), nullptr);
 }
 
-TEST(CPU_WrapperRoutingLastError_NONE, RecordsAnException)
+TEST_P(CPU_WrapperRoutingLastError_NONE, RecordsAnException)
 {
     miopenStatus_t status = miopenStatusSuccess;
     testing::internal::CaptureStderr();
@@ -780,7 +810,7 @@ TEST(CPU_WrapperRoutingLastError_NONE, RecordsAnException)
 
 // An entry point in the forwarding set that has no hipDNN implementation yet
 // must fail loudly instead of running MIOpen.
-TEST(CPU_WrapperRoutingLastError_NONE, ForwardingNotImplementedFailsAndRecordsTheFailure)
+TEST_P(CPU_WrapperRoutingLastError_NONE, ForwardingNotImplementedFailsAndRecordsTheFailure)
 {
     miopenStatus_t recorded = miopenStatusSuccess;
     hipdnn::ClearForwardedFailure();
@@ -802,7 +832,7 @@ TEST(CPU_WrapperRoutingLastError_NONE, ForwardingNotImplementedFailsAndRecordsTh
 }
 
 // The record behind miopenGetLastForwardedError.
-TEST(CPU_WrapperRoutingLastError_NONE, LastForwardedFailureFollowsRecordAndClear)
+TEST_P(CPU_WrapperRoutingLastError_NONE, LastForwardedFailureFollowsRecordAndClear)
 {
     miopenStatus_t status = miopenStatusSuccess;
     hipdnn::ClearForwardedFailure();
@@ -824,7 +854,7 @@ TEST(CPU_WrapperRoutingLastError_NONE, LastForwardedFailureFollowsRecordAndClear
     EXPECT_FALSE(hipdnn::LastForwardedFailure(&status));
 }
 
-TEST(CPU_WrapperRoutingLastError_NONE, LastForwardedFailureIsPerThread)
+TEST_P(CPU_WrapperRoutingLastError_NONE, LastForwardedFailureIsPerThread)
 {
     hipdnn::ClearForwardedFailure();
     bool seenOnItsThread = false;
@@ -840,6 +870,8 @@ TEST(CPU_WrapperRoutingLastError_NONE, LastForwardedFailureIsPerThread)
     EXPECT_TRUE(seenOnItsThread);
     EXPECT_FALSE(hipdnn::LastForwardedFailure(&status));
 }
+
+INSTANTIATE_TEST_SUITE_P(Quick, CPU_WrapperRoutingLastError_NONE, testing::Values(0));
 
 } // namespace
 

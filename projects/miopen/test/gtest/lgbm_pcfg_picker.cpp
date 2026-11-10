@@ -39,7 +39,7 @@ using miopen::ai::lgbm::pcfg::kNumBaseProbFeatures;
 using miopen::ai::lgbm::pcfg::LgbmPcfgMetadata;
 using miopen::ai::lgbm::pcfg::ScorePickForTest;
 
-class CPU_LgbmPcfgPicker_NONE : public ::testing::Test
+class CPU_LgbmPcfgPicker_NONE : public testing::TestWithParam<int>
 {
 protected:
     const LgbmPcfgMetadata& meta = LgbmPcfgMetadata::Get();
@@ -59,7 +59,7 @@ protected:
 //   - is deterministic (same inputs -> same order on a second call).
 // This exercises the metadata load, per-solver predict dispatch, feature-row
 // assembly, and the stable argsort -- without any external reference.
-TEST_F(CPU_LgbmPcfgPicker_NONE, RanksRealCatalogCandidatesDeterministically)
+TEST_P(CPU_LgbmPcfgPicker_NONE, RanksRealCatalogCandidatesDeterministically)
 {
     int solvers_checked = 0;
     int buckets_checked = 0;
@@ -128,7 +128,7 @@ TEST_F(CPU_LgbmPcfgPicker_NONE, RanksRealCatalogCandidatesDeterministically)
 // A gfx_code solver encodes the live gfx_id as its index in the model's shipped
 // vocab. Every arch the catalog has buckets for must be in that vocab; a missing
 // one would silently be scored as the unknown-arch (-1) category.
-TEST_F(CPU_LgbmPcfgPicker_NONE, GfxVocabCoversEveryBucketArch)
+TEST_P(CPU_LgbmPcfgPicker_NONE, GfxVocabCoversEveryBucketArch)
 {
     int gfx_solvers = 0;
     for(const auto& solver : meta.SolverNames())
@@ -154,12 +154,16 @@ TEST_F(CPU_LgbmPcfgPicker_NONE, GfxVocabCoversEveryBucketArch)
     ASSERT_GT(gfx_solvers, 0) << "no gfx_code solver in the bundle";
 }
 
+INSTANTIATE_TEST_SUITE_P(Quick, CPU_LgbmPcfgPicker_NONE, testing::Values(0));
+
+using CPU_LgbmPcfgForest_NONE = testing::TestWithParam<int>;
+
 // Golden-vector parity for the per-solver pcfg models: the forest walker must
 // reproduce LightGBM's raw score for every committed (features -> expected)
 // vector, across all 11 solver models. The fixture includes random+NaN rows so
 // the numeric missing_type paths are exercised. Ground truth is produced by the
 // LightGBM Python API from the exact models shipped in the tree.
-TEST(CPU_LgbmPcfgForest_NONE, MatchesGoldenVectors)
+TEST_P(CPU_LgbmPcfgForest_NONE, MatchesGoldenVectors)
 {
     const auto& meta = LgbmPcfgMetadata::Get();
     if(!meta.IsReady())
@@ -218,6 +222,8 @@ TEST(CPU_LgbmPcfgForest_NONE, MatchesGoldenVectors)
     MIOPEN_LOG_I2("lgbm_pcfg golden parity: " << solvers_checked << " solvers, max abs err "
                                               << max_abs_err);
 }
+
+INSTANTIATE_TEST_SUITE_P(Quick, CPU_LgbmPcfgForest_NONE, testing::Values(0));
 
 } // namespace
 

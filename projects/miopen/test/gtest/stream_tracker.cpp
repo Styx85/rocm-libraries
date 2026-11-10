@@ -826,13 +826,15 @@ TEST_F(GPU_StreamTracker_FP32, TheWorkerFreesOutsideTheTrackerLock)
         << "acquire() waited for the worker's deallocation";
 }
 
-TEST(CPU_StreamTracker_NONE, ZeroCapIsRaisedToOne)
+using CPU_StreamTracker_NONE = testing::TestWithParam<int>;
+
+TEST_P(CPU_StreamTracker_NONE, ZeroCapIsRaisedToOne)
 {
     // A zero cap would leave acquire() waiting on an empty backlog forever.
     EXPECT_EQ(miopen::StreamTracker{0}.MaxDraining(), 1u);
 }
 
-TEST(CPU_StreamTracker_NONE, BacklogCapFollowsGpuMaxHwQueues)
+TEST_P(CPU_StreamTracker_NONE, BacklogCapFollowsGpuMaxHwQueues)
 {
     using miopen::StreamTracker;
     // The hardware rings less the handle's stream and the slot being handed out,
@@ -848,3 +850,5 @@ TEST(CPU_StreamTracker_NONE, BacklogCapFollowsGpuMaxHwQueues)
     for(const char* bad : {"0", "-1", "abc", "", "99999999999999999999999"})
         EXPECT_EQ(StreamTracker::MaxDrainingFor(bad), 2u) << "GPU_MAX_HW_QUEUES=\"" << bad << '"';
 }
+
+INSTANTIATE_TEST_SUITE_P(Quick, CPU_StreamTracker_NONE, testing::Values(0));
