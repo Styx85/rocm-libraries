@@ -103,10 +103,31 @@ if(ROCBLAS_ENABLE_BLIS)
 endif()
 
 if(ROCBLAS_ENABLE_HIPBLASLT)
+  set(_rocblas_hipblaslt_package_version 1.0.0)
   if(NOT ROCBLAS_ENABLE_SUPERBUILD)
     find_package(hipblaslt 1.0.0 REQUIRED)
+    # Built against hipBLASLt 1.5.1 or later, the library may call functions added there
+    # (fixed-point emulation), so the package must require it. The package version and the
+    # header can disagree, so check both.
+    set(_hipblaslt_header_version "")
+    get_target_property(_hipblaslt_include_dirs roc::hipblaslt INTERFACE_INCLUDE_DIRECTORIES)
+    foreach(_dir IN LISTS _hipblaslt_include_dirs)
+      if(NOT _hipblaslt_header_version AND EXISTS "${_dir}/hipblaslt/hipblaslt-version.h")
+        file(STRINGS "${_dir}/hipblaslt/hipblaslt-version.h" _lines
+             REGEX "#define HIPBLASLT_VERSION_(MAJOR|MINOR|PATCH) ")
+        foreach(_part MAJOR MINOR PATCH)
+          string(REGEX MATCH "HIPBLASLT_VERSION_${_part} +([0-9]+)" _match "${_lines}")
+          list(APPEND _hipblaslt_header_version "${CMAKE_MATCH_1}")
+        endforeach()
+        list(JOIN _hipblaslt_header_version "." _hipblaslt_header_version)
+      endif()
+    endforeach()
+    if(hipblaslt_VERSION VERSION_GREATER_EQUAL 1.5.1
+       OR _hipblaslt_header_version VERSION_GREATER_EQUAL 1.5.1)
+      set(_rocblas_hipblaslt_package_version 1.5.1)
+    endif()
   endif()
-  rocm_package_add_dependencies(DEPENDS "hipblaslt >= 1.0.0")
+  rocm_package_add_dependencies(DEPENDS "hipblaslt >= ${_rocblas_hipblaslt_package_version}")
 endif()
 
 if(ROCBLAS_ENABLE_AMD_SMI)

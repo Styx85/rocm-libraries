@@ -190,6 +190,30 @@ if(BUILD_WITH_HIPBLASLT)
   # don't wait until after Tensile to find hipblaslt if enabled; needed for clients-only build too
   find_package( hipblaslt ${HIPBLASLT_VERSION} REQUIRED CONFIG PATHS ${hipblaslt_path} ${ROCM_PATH})
   message(STATUS "FOUND hipBLASLt, INCLUDE_DIR: ${HIPBLASLT_INCLUDE_DIR}")
+
+  # Built against hipBLASLt 1.5.1 or later, the library may call functions added there (fixed-point
+  # emulation, library/src/include/hipblaslt_emulation.hpp), so the packages must require it. The
+  # package version and the header can disagree, so check both.
+  set( ROCBLAS_HIPBLASLT_PACKAGE_VERSION ${HIPBLASLT_VERSION} )
+  set( _hipblaslt_header_version "" )
+  get_target_property( _hipblaslt_include_dirs roc::hipblaslt INTERFACE_INCLUDE_DIRECTORIES )
+  foreach( _dir IN LISTS _hipblaslt_include_dirs )
+    if( NOT _hipblaslt_header_version AND EXISTS "${_dir}/hipblaslt/hipblaslt-version.h" )
+      file( STRINGS "${_dir}/hipblaslt/hipblaslt-version.h" _lines
+            REGEX "#define HIPBLASLT_VERSION_(MAJOR|MINOR|PATCH) " )
+      foreach( _part MAJOR MINOR PATCH )
+        string( REGEX MATCH "HIPBLASLT_VERSION_${_part} +([0-9]+)" _match "${_lines}" )
+        list( APPEND _hipblaslt_header_version "${CMAKE_MATCH_1}" )
+      endforeach()
+      list( JOIN _hipblaslt_header_version "." _hipblaslt_header_version )
+    endif()
+  endforeach()
+  if( ( hipblaslt_VERSION VERSION_GREATER_EQUAL 1.5.1
+        OR _hipblaslt_header_version VERSION_GREATER_EQUAL 1.5.1 )
+      AND HIPBLASLT_VERSION VERSION_LESS 1.5.1 )
+    set( ROCBLAS_HIPBLASLT_PACKAGE_VERSION 1.5.1 )
+  endif()
+  message( STATUS "hipBLASLt package dependency: >= ${ROCBLAS_HIPBLASLT_PACKAGE_VERSION}" )
 endif()
 
 function(list_replace list old new)
@@ -294,7 +318,7 @@ if( BUILD_WITH_HIPBLASLT )
   if( BUILD_WITH_HIPBLASLT_ONLY )
     list( APPEND HIPBLASLT_DEFINES BUILD_WITH_HIPBLASLT_ONLY )
   endif()
-  rocm_package_add_dependencies(DEPENDS "hipblaslt >= ${HIPBLASLT_VERSION}")
+  rocm_package_add_dependencies(DEPENDS "hipblaslt >= ${ROCBLAS_HIPBLASLT_PACKAGE_VERSION}")
 endif()
 
 if(BUILD_CLIENTS_TESTS)
