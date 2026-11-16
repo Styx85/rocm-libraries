@@ -4,6 +4,7 @@
 #pragma once
 
 #include "ck_tile/dispatcher/kernel_instance.hpp"
+#include "ck_tile/dispatcher/backends/gfx125_gate.hpp"
 #include "ck_tile/dispatcher/validation/reference_kernels.hpp"
 #include "ck_tile/core.hpp"
 #include "ck_tile/host.hpp"
@@ -19,20 +20,6 @@
 namespace ck_tile {
 namespace dispatcher {
 namespace backends {
-
-// True for pipelines that declare skipCheckValidLaunchParams (the TDM pipelines).
-// ck_tile::UniversalGemmKernel::IsSupportedArgument accepts every problem for them:
-// TDM clips each box to the tensor's real extent, so no dim must be a tile multiple.
-template <typename Pipeline, typename = void>
-struct pipeline_skips_launch_checks : std::false_type
-{
-};
-template <typename Pipeline>
-struct pipeline_skips_launch_checks<Pipeline,
-                                    std::void_t<decltype(Pipeline::skipCheckValidLaunchParams)>>
-    : std::bool_constant<Pipeline::skipCheckValidLaunchParams>
-{
-};
 
 // True for kernels whose launcher rejects partial N/K tiles (preshuffle compute TDM).
 template <typename Kernel, typename = void>
@@ -94,6 +81,8 @@ class GeneratedTileKernelInstance : public KernelInstance
         // so the bridge stays a strict functional equivalent of Old-TE. Pipelines
         // that skip that check (TDM) skip this gate too: they clip to real extents.
         using Pipeline = typename SelectedKernel::GemmPipeline;
+        if(!device_supports_pipeline<Pipeline>())
+            return false;
         if constexpr(!pipeline_skips_launch_checks<Pipeline>::value)
         {
             constexpr bool pad_m = SelectedKernel::kPadM;

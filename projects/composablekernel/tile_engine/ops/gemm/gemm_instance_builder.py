@@ -371,6 +371,7 @@ class GemmKernelBuilder:
             pad_m,
             pad_n,
             pad_k,
+            gpu_target=self.gpu_target,
         ):
             raise ValueError(
                 f"unsupported trait combination {pipeline}-{epilogue}-{scheduler}"
@@ -382,6 +383,40 @@ class GemmKernelBuilder:
             raise ValueError(
                 f"tile config {tile_config} is not valid for {pipeline} on {self.gpu_target}"
             )
+
+    def gfx1250_instance_reject_reason(self, tile_config, pipeline):
+        """Why a gfx1250-only pipeline (comp_async / comp_tdm*, ring variants
+        included) cannot be emitted with this tile on this target, else "".
+
+        Runs on every generation path, not only --gen_single: --gen_all_individual
+        pairs every tile with every trait and never validates, so without it the
+        builder would emit, e.g., comp_tdm_ra for gfx950 or with warp_k=2.
+        """
+        ring_reason = _validation_utils.pipeline_ring_reject_reason(pipeline)
+        if ring_reason:
+            return ring_reason
+        pipeline = _validation_utils.split_pipeline_ring(pipeline)[0]
+        if not _validation_utils._uses_gfx1250_gemm_pipeline(
+            pipeline, self.kernel_name_prefix
+        ):
+            return ""
+        return _validation_utils.gfx1250_gemm_pipeline_reject_reason(
+            pipeline,
+            self.kernel_name_prefix,
+            self.gpu_target,
+            tile_config["tile_m"],
+            tile_config["tile_n"],
+            tile_config["warp_m"],
+            tile_config["warp_n"],
+            tile_config["warp_k"],
+            tile_config["warp_tile_m"],
+            tile_config["warp_tile_n"],
+            tile_config["warp_tile_k"],
+            self.datatype,
+            self.datatype,
+            self._c_datatype(),
+            self.layout,
+        )
 
     def _normalize_trait_combo(self, trait_combo):
         if len(trait_combo) == 7:
@@ -763,6 +798,9 @@ class GemmKernelBuilder:
                 "comp_tdm_ra": "ck_tile::BaseGemmPipelineAgBgCrCompTDM",
             }
             self._check_pipeline_allowed_for_op(pipeline, epilogue, pad_m, pad_n, pad_k)
+            gfx1250_reason = self.gfx1250_instance_reject_reason(tile_config, pipeline)
+            if gfx1250_reason:
+                raise ValueError(gfx1250_reason)
             if validate:
                 self._check_instance_valid(tile_config, trait_combo)
         elif self.kernel_name_prefix == "gemm_preshuffle":
@@ -1042,7 +1080,16 @@ struct SelectedKernel {{
             "true" if pipeline in DOUBLE_SMEM_BUFFER_PIPELINES else "false"
         )
 
+        requires_gfx125 = (
+            _validation_utils.split_pipeline_ring(pipeline)[0]
+            in _validation_utils.GEMM_TDM_PIPELINES
+        )
         instance_code = f"""
+
+    // True for a pipeline that only runs on gfx125. Declared at struct scope for the
+    // dispatcher's kernel selection (TileKernelInstance), which cannot see the GemmPipeline
+    // declared in launch(); launch() static_asserts it against ck_tile::pipeline_requires_gfx125_v.
+    static constexpr bool kRequiresGfx125 = {"true" if requires_gfx125 else "false"};
 
     // Traits configurations
     static constexpr bool kPadM = {"true" if pad_m in [True, "true"] else "false"};
@@ -1361,7 +1408,9 @@ struct SelectedKernel {{
         ]:
             instance_code += f"""
 
-        using GemmPipeline = {lookup_pipeline(pipeline_impl_map, pipeline)}<UniversalGemmProblem>;"""
+        using GemmPipeline = {lookup_pipeline(pipeline_impl_map, pipeline)}<UniversalGemmProblem>;
+        static_assert(kRequiresGfx125 == ck_tile::pipeline_requires_gfx125_v<GemmPipeline>,
+                      "kRequiresGfx125 must match the pipeline's gfx125 requirement");"""
 
         # Scheduler initialization
         if self.kernel_name_prefix in ["gemm_universal", "grouped_gemm", "mx_gemm"]:
@@ -1392,7 +1441,9 @@ struct SelectedKernel {{
         if self.kernel_name_prefix in ["gemm_universal", "grouped_gemm", "mx_gemm"]:
             instance_code += f"""
 
-        using GemmPipeline = {lookup_pipeline(pipeline_impl_map, pipeline)}<UniversalGemmProblem>;"""
+        using GemmPipeline = {lookup_pipeline(pipeline_impl_map, pipeline)}<UniversalGemmProblem>;
+        static_assert(kRequiresGfx125 == ck_tile::pipeline_requires_gfx125_v<GemmPipeline>,
+                      "kRequiresGfx125 must match the pipeline's gfx125 requirement");"""
 
         # Epilogue
         instance_code += self.populate_epilogue(epilogue, pipeline)

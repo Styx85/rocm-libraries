@@ -15,6 +15,7 @@
 #pragma once
 
 #include "ck_tile/dispatcher/kernel_instance.hpp"
+#include "ck_tile/dispatcher/backends/gfx125_gate.hpp"
 #include "ck_tile/core.hpp"
 #include "ck_tile/host.hpp"
 #include <hip/hip_runtime.h>
@@ -52,6 +53,10 @@ class GeneratedKernelInstance : public KernelInstance
 
     bool supports(const Problem& problem) const override
     {
+        using Pipeline = typename SelectedKernel::GemmPipeline;
+        if(!device_supports_pipeline<Pipeline>())
+            return false;
+
         // Check dimension divisibility based on padding flags
         constexpr bool pad_m = SelectedKernel::kPadM;
         constexpr bool pad_n = SelectedKernel::kPadN;
@@ -71,7 +76,6 @@ class GeneratedKernelInstance : public KernelInstance
 
         // Padding does not relax the global vector widths; gate on them so the
         // registry falls through to a narrower kernel instead of failing at launch.
-        using Pipeline = typename SelectedKernel::GemmPipeline;
         // Select the host-side A/B distribution for this kernel's target.
         // This avoids a HIP device query for every candidate in the registry.
         const bool wave32  = key_.gfx_arch.rfind("gfx9", 0) != 0;
