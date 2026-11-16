@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 # Copyright (c) Advanced Micro Devices, Inc., or its affiliates.
 # SPDX-License-Identifier: MIT
 
@@ -7,7 +5,7 @@
 AUTO-GENERATED FILE - DO NOT EDIT DIRECTLY!
 
 Generated from: arch_specs.json
-Generated at: 2026-11-12T11:55:03.339481
+Generated at: 2026-11-16T11:30:02.973347
 
 To update this file:
 1. Edit arch_specs.json
