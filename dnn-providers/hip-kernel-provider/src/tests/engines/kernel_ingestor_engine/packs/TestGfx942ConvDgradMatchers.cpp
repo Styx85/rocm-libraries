@@ -278,7 +278,8 @@ TEST(TestGfx942ConvDgradGraphMatcher, EachEngineMatchesItsOwnArchitectureOnly)
         EXPECT_FALSE(matchesGraph(GFX942_CONV_DGRAD_AOT, fixture.context()))
             << properties.gcnArchName << " wave" << properties.warpSize;
     }
-    // A gfx942 variant name (MI300X reports its target features) still prefix-matches.
+    // A gfx942 name carrying its target features (as a device reports it) still
+    // prefix-matches.
     const auto variant = fixtureOf(
         DgradShape{}, data_objects::DataType::HALF, deviceProperties("gfx942:sramecc+:xnack-"));
     EXPECT_TRUE(matchesGraph(GFX942_CONV_DGRAD_AOT, variant.context()));
