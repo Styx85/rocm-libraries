@@ -3,10 +3,28 @@
 Documentation for rocFFT is available at
 [https://rocm.docs.amd.com/projects/rocFFT/en/latest/](https://rocm.docs.amd.com/projects/rocFFT/en/latest/).
 
-## (Unreleased) rocFFT 1.0.41
+## (Unreleased) rocFFT 1.0.42
+
+### Changed
+
+* Multi-device plans are now built as independent per-brick transforms, without any data movement
+  between devices, when no input or output brick splits a transform length and every input brick
+  has an output brick on the same device covering the same batch range.
+* Multi-dimensional, multi-device transforms whose bricks split no transform length, but cannot be
+  paired as above, now redistribute data between devices instead of gathering the entire transform
+  on a single device.
+
+### Resolved issues
+
+* Fixed multi-device plans whose per-device sub-transforms have lengths involving large prime
+  factors silently falling back to running the transform on a single device.  Such plans may now
+  perform better.
+
+## rocFFT 1.0.41 for ROCm 10.2
 
 ### Added
 
+* Added further support for very large FFTs (length greater than 2^32).
 * JIT callbacks specified with the `rocfft_plan_description_set_load_callback` and
   `rocfft_plan_description_set_store_callback` APIs can now be used with transforms that have fields
   specified on the same plan description.
@@ -32,10 +50,6 @@ Documentation for rocFFT is available at
   factors when the output data layout uses a batch distance larger than the transform length.
 * Fixed `rocfft_plan_create` failures and GPU memory access faults for 1D complex transforms of
   lengths involving large prime factors when batches are interleaved (unit batch distance).
-
-### Added
-
-* Added further support for very large FFTs (length greater than 2^32).
 
 ### Optimized
 
