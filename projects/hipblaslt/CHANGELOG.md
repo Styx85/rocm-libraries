@@ -30,6 +30,7 @@ Full documentation for hipBLASLt is available at [rocm.docs.amd.com/projects/hip
 * Fixed `hipblaslt-bench` and `hipblaslt-test` rejecting a compute-input type override for A alone and accepting an unsupported override for B alone.
 * Fixed `hipblasLtMatmul` and `hipblaslt_ext::Gemm::initialize` accepting an algo for a grouped GEMM solution, and `hipblaslt_ext::GroupedGemm::initialize` accepting one for a non-grouped solution. They now return `HIPBLAS_STATUS_INVALID_VALUE`.
 * Fixed `hipblaslt.h`, `hipblaslt-ext-op.h`, and `hipblaslt-local-kernel.h` failing to compile in a C translation unit. The C++ standard library includes, the default member initializers in `hipblasLtMatmulHeuristicResult_t`, the `static_cast` in the `*_INVALID` macros, and the C++-only `hipblaslt_e8.h` and `hipblaslt_e5m3.h` types now apply only to C++. In C, the `HIP_R_*_EXT` type ids are enumeration constants, so two C files that include the headers no longer fail to link with duplicate symbols. C++ consumers see no change.
+* Fixed gfx1200 and gfx1201 GEMM kernels intermittently returning wrong results with a success status, such as padding past the end of K added into D, or D scaled by the wrong factor, zero, or NaN. Once a vector instruction has read a scalar register, these GPUs need an `s_wait_alu` between a later write to that register and the next read of it; TensileLite now inserts those waits, as LLVM does for compiled code. Small GEMMs can run 1-3% slower.
 
 ## hipBLASLt 1.5.0 for ROCm 10.2.0
 
