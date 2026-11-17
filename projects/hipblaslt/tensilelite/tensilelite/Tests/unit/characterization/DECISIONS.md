@@ -712,3 +712,11 @@ preceding validation command.
 
 **Classification:** intended command-line behavior. The three added snapshot
 fields expose one new parser default; no existing saved value was re-recorded.
+
+## D51 — Adjacent A layout parameter
+
+**ADR:** [0038-record-adjacent-a-parameter](adr/0038-record-adjacent-a-parameter.md)
+
+**Decision:** Record the default-off `WaveTileAdjacent` setting in the parameter
+roster, solution state and serialized defaults. Existing parameter values and
+default kernel names are unchanged.

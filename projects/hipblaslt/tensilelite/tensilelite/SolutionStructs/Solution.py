@@ -3797,7 +3797,8 @@ class Solution(collections.abc.Mapping):
       state["DirectToLdsMXSA"] = state["DirectToLdsA"]
       state["LocalWriteUseSgprMXSA"] = state["DirectToLdsMXSA"]
       state["ProblemType"]["MirrorDimsMXSA"] = list(state["ProblemType"]["MirrorDimsA"])
-      state["VectorWidthMXSA"] = state["VectorWidthA"]
+      # Pair consecutive A scale tiles independently of the data VWA.
+      state["VectorWidthMXSA"] = 1 if state.get("WaveTileAdjacent") else state["VectorWidthA"]
       state["MIWaveTileMXSA"] = state["MIWaveTileA"]
       state["UnrollMajorLDSMXSA"] = state["UnrollMajorLDSA"]
 
@@ -5974,7 +5975,10 @@ class Solution(collections.abc.Mapping):
 
     # Default GlobalStoreVectorWidth
     if state["StoreVectorWidth"] == -1:
-      if state["SourceSwap"]:
+      if state.get("WaveTileAdjacent") and state["EnableMatrixInstruction"]:
+        # Wider stores would need results from another lane.
+        state["StoreVectorWidth"] = 1 if state["SourceSwap"] else state["MIOutputVectorWidth"]
+      elif state["SourceSwap"]:
         state["StoreVectorWidth"] = state["VectorWidthA"]
       else:
         if state["EnableMatrixInstruction"]:
@@ -5995,6 +5999,14 @@ class Solution(collections.abc.Mapping):
       # own its free0 elements in pairs. The divisibility check below turns an
       # incompatible VectorWidthA into a rejection.
       state["StoreVectorWidth"] = max(state["StoreVectorWidth"], 2)
+
+    if state.get("WaveTileAdjacent") and state["EnableMatrixInstruction"]:
+      nativeStoreWidth = 1 if state["SourceSwap"] else state["MIOutputVectorWidth"]
+      if state["StoreVectorWidth"] > nativeStoreWidth:
+        reject(state, printRejectionReason,
+               "WaveTileAdjacent requires StoreVectorWidth <= %u for direct stores; requested %u"
+               % (nativeStoreWidth, state["StoreVectorWidth"]))
+        return
 
     if state["EnableMatrixInstruction"] and not state["UseSubtileImpl"]:
       if state["SourceSwap"]:
@@ -7135,7 +7147,8 @@ class Solution(collections.abc.Mapping):
       offsetBlk = state["LdsOffsetB"] + ldsNumBytesAlignedB
       # Aligned interleave grows the per-buffer block; keep it only if it still double-buffers
       # within MaxLDS, else disable (a too-tight forced kernel is rejected below, not run baseline).
-      if _segAligned:
+      # Adjacent A uses the paired-buffer budget checked below.
+      if _segAligned and not state.get("WaveTileAdjacent"):
         _ok, _inflated = segAlignedBudget(_segRes["blockSpan"], numLdsBlk, offsetBlk, state["MaxLDS"])
         if _ok:
           offsetBlk = _inflated   # already a power of two -> roundup below is a no-op
@@ -7289,7 +7302,7 @@ class Solution(collections.abc.Mapping):
     # Tight layouts pair each component's ping/pong buffers when supported. Persistent
     # kernels retain their existing unpaired interleave if pairing is unavailable;
     # those that cannot afford the swap-mask SGPRs skip the attempt entirely.
-    if state["LDSSegmentInterleave"] == 1 and not state["TDMSplit"] and not _segAligned \
+    if state["LDSSegmentInterleave"] == 1 and not state["TDMSplit"] and (not _segAligned or state.get("WaveTileAdjacent")) \
         and not (isPersistent(state) and segPersistentKeepsUnpaired(state)):
       _pairedReason = None if state["LDSSegmentBRotate"] else segPairedReason(state)
       if _pairedReason is None:
@@ -7644,6 +7657,45 @@ class Solution(collections.abc.Mapping):
       amaxBPE = int(state["ProblemType"]["DataTypeAmaxD"].numBytes())
       ldsAmaxDBytes = 4 * (num_workItems // half_wave_size) * amaxBPE
       ldsNumBytes += ldsAmaxDBytes
+
+    if state.get("WaveTileAdjacent"):
+      pt = state["ProblemType"]
+      supported = (tuple(state["ISA"]) == (12, 5, 0)
+                   and state["MatrixInstM"] == state["MatrixInstN"] == 16
+                   and state["MatrixInstBM"] == state["MatrixInstBN"] == 1
+                   and state["WavefrontSize"] == 32 and state["MIWaveGroup"] == [2, 2]
+                   and state["MIArchVgpr"] and state["LocalSplitU"] == 1
+                   and state["TDMInst"] == 3 and not state["TDMSplit"] and not state.get("TDMFuse")
+                   and state["UnrollMajorLDSA"] and state["UnrollMajorLDSB"]
+                   and not state["LDSTrInst"] and not pt["Sparse"]
+                   and pt["ComputeDataType"].isSingle()
+                   and not state["StoreRemapVectorWidth"]
+                   and not state.get("UseSubtileImpl") and not isPersistent(state)
+                   and not state.get("CompactLoopStore")
+                   and not pt.get("Gradient")
+                   and not state.get("PostLoopStoreInNll"))
+      for axis, tc in enumerate(("A", "B")):
+        width = state["VectorWidth" + tc]
+        supported &= width > 0 and width & (width - 1) == 0
+        if pt.get("MXBlock" + tc):
+          # LRA and DS immediates apply padding separately; their phases must agree.
+          scaleBlock = state["LdsBlockSizePerPadMXS" + tc]
+          if scaleBlock and state["LdsPadMXS" + tc]:
+            scaleTile = 16 * (state["MatrixInstK"] // pt["MXBlock" + tc])
+            vectors = state["MIWaveTile"][axis] // width
+            groupTiles = width * (2 if vectors >= 2 and vectors % 2 == 0 else 1)
+            supported &= (scaleTile > 0 and (scaleTile % scaleBlock == 0 or scaleBlock % scaleTile == 0)
+                          and scaleTile * groupTiles % scaleBlock == 0
+                          and scaleTile * state["MIWaveTile"][axis] % scaleBlock == 0)
+          supported &= (state["MXScaleFormat"] == "InMemorySwizzle"
+                        and pt.get("MXBlockFree" + tc, 1) == 1
+                        and state["MatrixInstK"] // pt["MXBlock" + tc] == 4
+                        and not state.get("DirectToVgprMXS" + tc))
+      # The A operand register mapping supports VWA 1 and 2.
+      supported &= state["VectorWidthA"] in (1, 2)
+      if not supported:
+        reject(state, printRejectionReason, "WaveTileAdjacent: unsupported read/store layout or padding phase")
+        return
 
     state["LdsNumBytes"] = ldsNumBytes
     ldsSize = ldsNumBytes

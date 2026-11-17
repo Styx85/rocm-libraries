@@ -236,6 +236,10 @@ def _getName(state, requiredParameters: frozenset, splitGSU: bool, ignoreInterna
     if state.get("TileProcessingStrategy", "None") == "None":
       requiredParametersTemp.difference_update({"WorkAssignment", "PersistentXCCMapping", "WorkQueueStealing"})
 
+    # Keep existing kernel names when the adjacent A layout is disabled.
+    if not state.get("WaveTileAdjacent", False):
+      requiredParametersTemp.discard("WaveTileAdjacent")
+
     # LDSTrStoreShuffle 0 emits byte-identical assembly to a kernel generated before the parameter
     # existed, so encoding AS0 would rename every kernel in the library without changing one
     # instruction. Omit it at 0 and let 1/2 carry the tag; absence therefore means 0, and the

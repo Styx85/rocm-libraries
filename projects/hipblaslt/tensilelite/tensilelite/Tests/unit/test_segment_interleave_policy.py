@@ -581,3 +581,156 @@ def test_persistent_yaml_reaches_paired_tail_reset(problem_index):
             assert mask == f"s[sgpr{expected_mask}]", swap
         if problem_index == 2:
             assert any(reset[1].startswith("s[sgprtdmMXS") for _, reset in resets), name
+
+
+@pytest.mark.parametrize("wave_tile,width", [(7, 1), (6, 1), (6, 2)])
+@pytest.mark.parametrize("source_swap", [False, True])
+@pytest.mark.parametrize("width_b", [2, 4, 8])
+def test_adjacent_waves_preserve_writer_and_choose_native_stores(derive, wave_tile, width, source_swap, width_b):
+    overrides = dict(mi=[16, 16, 128, 1, 1, wave_tile, 8, 2, 2],
+                     VectorWidthA=width, VectorWidthB=width_b, HalfPLR=0,
+                     SourceSwap=source_swap, StoreVectorWidth=-1,
+                     StoreRemapVectorWidth=0, LDSTrInst=False,
+                     ProblemType={"MXBlockA": 32, "MXBlockB": 32})
+    baseline, out = derive(0, **overrides)
+    assert baseline["Valid"], out
+    assert baseline["StoreVectorWidth"] == (width if source_swap else 8 * width)
+    assert baseline["VectorWidthMXSA"] == width
+    adjacent, out = derive(0, WaveTileAdjacent=True, **overrides)
+    assert adjacent["Valid"], out
+    assert _lds_configuration(baseline) == _lds_configuration(adjacent)
+    assert adjacent["StoreVectorWidth"] == (1 if source_swap else 8)
+    assert adjacent["VectorWidthA"] == baseline["VectorWidthA"] == width
+    assert adjacent["VectorWidthB"] == baseline["VectorWidthB"] == width_b
+    assert adjacent["VectorWidthMXSB"] == baseline["VectorWidthMXSB"]
+    interleaved, out = derive(1, WaveTileAdjacent=True, **overrides)
+    assert interleaved["Valid"], out
+    assert interleaved["StoreVectorWidth"] == (1 if source_swap else 8)
+    offsets = interleaved["LDSSegInterleaveOffsets"]
+    assert offsets["pairedBuffers"]
+    assert not offsets.get("mxsSplitA")  # Keep the existing scale writer.
+    assert offsets["pairedUsedBytes"] <= interleaved["LdsNumBytes"]
+    for phase in (0, 1):
+        starts = [offsets["ldsBaseA"] + component * offsets["writeStrideBytes"]
+                  + phase * offsets["bufferStrideA"] for component in (0, 1)]
+        size = offsets["bufferStrideA"]
+        segments = [set(range(start // 65536, (start + size - 1) // 65536 + 1))
+                    for start in starts]
+        assert segments[0].isdisjoint(segments[1])
+
+
+def test_adjacent_scale_padding_phase_must_match_component_writer(derive):
+    # Wave1 starts at byte384 within a 768-byte scale component. Padding
+    # every 256 bytes would give its base and tile offset different phases.
+    overrides = dict(mi=[16, 16, 128, 1, 1, 6, 8, 2, 2],
+                     VectorWidthA=1, VectorWidthB=8, HalfPLR=0,
+                     StoreRemapVectorWidth=0, LDSTrInst=False,
+                     LdsBlockSizePerPadMXSA=256, LdsPadMXSA=16,
+                     ProblemType={"MXBlockA": 32, "MXBlockB": 32})
+    baseline, out = derive(0, **overrides)
+    assert baseline["Valid"], out
+    adjacent, out = derive(0, WaveTileAdjacent=True, **overrides)
+    assert not adjacent["Valid"]
+    assert "WaveTileAdjacent" in out and "padding phase" in out
+
+
+@pytest.mark.parametrize("tile,width,half_plr", [(6, 1, 1), (6, 2, 1), (7, 1, 2)])
+@pytest.mark.parametrize("width_b,rotate", [(2, 0), (2, 1), (4, 0), (4, 1), (8, 0)])
+@pytest.mark.parametrize("source_swap", [False, True])
+def test_adjacent_a_with_original_b_and_rotate(derive, tile, width, half_plr, width_b, rotate, source_swap):
+    sol, out = derive(1, mi=[16, 16, 128, 1, 1, tile, 8, 2, 2],
+                      SourceSwap=source_swap, VectorWidthA=width, VectorWidthB=width_b,
+                      HalfPLR=half_plr, WaveTileAdjacent=True,
+                      LDSSegmentBRotate=rotate, LdsPadA=16, LdsPadB=16,
+                      LdsBlockSizePerPadA=256, LdsBlockSizePerPadB=1024,
+                      TDMIterateMode=0, ProblemType={"MXBlockA": 0, "MXBlockB": 0})
+    assert sol["Valid"], out
+    offsets = sol["LDSSegInterleaveOffsets"]
+    assert offsets["pairedBuffers"]
+    assert not offsets.get("aBaseline") and not offsets.get("bBaseline")
+    assert sol["StoreVectorWidth"] == (1 if source_swap else 8)
+    assert sol["VectorWidthB"] == width_b
+    if rotate:
+        from tensilelite.SolutionStructs.segment_interleave import b_rotate_reason
+        assert b_rotate_reason(sol._state) is None
+
+
+@pytest.mark.parametrize("source_swap,store_width,valid", [
+    (False, 1, True), (False, 2, True), (False, 4, True), (False, 8, True),
+    (False, 16, False), (True, 1, True), (True, 2, False),
+])
+def test_adjacent_store_width_is_explicit_and_lane_local(derive, source_swap, store_width, valid):
+    sol, out = derive(1, mi=[16, 16, 128, 1, 1, 6, 8, 2, 2],
+                      SourceSwap=source_swap, VectorWidthA=2, VectorWidthB=4,
+                      HalfPLR=1, WaveTileAdjacent=True,
+                      StoreVectorWidth=store_width, LDSSegmentBRotate=1,
+                      LdsPadA=16, LdsPadB=16,
+                      LdsBlockSizePerPadA=256, LdsBlockSizePerPadB=1024,
+                      TDMIterateMode=0, ProblemType={"MXBlockA": 0, "MXBlockB": 0})
+    assert bool(sol["Valid"]) == valid, out
+    assert sol["StoreVectorWidth"] == store_width
+    if not valid:
+        assert "WaveTileAdjacent requires StoreVectorWidth" in out
+        assert "for direct stores" in out
+
+
+@pytest.mark.parametrize("overrides,reason", [
+    ({"VectorWidthB": 8, "LDSSegmentBRotate": 1}, "MIWaveTile[1]/VectorWidthB must be even"),
+    ({"ProblemType": {"MXBlockA": 32, "MXBlockB": 32, "MXBlockFreeA": 2}},
+     "2D MX scale for A supports MXBlockFreeA 128 only, got 2"),
+])
+def test_adjacent_a_rejects_unimplemented_combinations(derive, overrides, reason):
+    params = dict(mi=[16, 16, 128, 1, 1, 6, 8, 2, 2], SourceSwap=False,
+                  VectorWidthA=1, VectorWidthB=4, HalfPLR=1,
+                  WaveTileAdjacent=True, TDMIterateMode=0,
+                  LdsPadA=16, LdsPadB=16, LdsBlockSizePerPadA=256,
+                  LdsBlockSizePerPadB=1024, ProblemType={"MXBlockA": 0, "MXBlockB": 0})
+    params.update(overrides)
+    sol, out = derive(1, **params)
+    assert not sol["Valid"], out
+    assert reason in out
+
+
+@pytest.mark.parametrize("tile,width,half_plr", [(6, 1, 1), (6, 2, 1), (7, 1, 2)])
+@pytest.mark.parametrize("source_swap", [False, True])
+@pytest.mark.parametrize("dtype,depth_u,pad", [("F8", 256, 16), ("F4", 512, 32)])
+def test_adjacent_a_mx_keeps_scale_writer_and_rotate(derive, tile, width, half_plr,
+                                                    source_swap, dtype, depth_u, pad):
+    overrides = dict(mi=[16, 16, 128, 1, 1, tile, 8, 2, 2],
+                     SourceSwap=source_swap, VectorWidthA=width, VectorWidthB=4,
+                     HalfPLR=half_plr, WaveTileAdjacent=True,
+                     LdsPadA=pad, LdsPadB=pad, DepthU=depth_u,
+                     LdsBlockSizePerPadA=256, LdsBlockSizePerPadB=1024,
+                     TDMIterateMode=0,
+                     ProblemType={"DataType": dtype, "DestDataType": "S",
+                                  "MXBlockA": 32, "MXBlockB": 32,
+                                  "DataTypeMXSA": "E8", "DataTypeMXSB": "E8"})
+    reference, out = derive(1, LDSSegmentBRotate=0, **overrides)
+    assert reference["Valid"], out
+    rotated, out = derive(1, LDSSegmentBRotate=1, **overrides)
+    assert rotated["Valid"], out
+    # BRotate changes reader deltas; the TDM writer and allocation stay fixed.
+    writer_keys = [key for key in reference._state if key.startswith("Lds")]
+    assert {key: reference[key] for key in writer_keys} == {
+        key: rotated[key] for key in writer_keys}
+    reference_offsets = reference["LDSSegInterleaveOffsets"]
+    offsets = rotated["LDSSegInterleaveOffsets"]
+    for key in ("ldsBaseA", "ldsBaseB", "ldsBaseMXSA", "ldsBaseMXSB",
+                "bufferStrideA", "bufferStrideB", "bufferStrideMXSA", "bufferStrideMXSB",
+                "writeStrideBytes", "pairedUsedBytes"):
+        assert reference_offsets[key] == offsets[key]
+    assert offsets["pairedBuffers"] and not offsets.get("mxsSplitA")
+    assert offsets["pairedUsedBytes"] <= rotated["LdsNumBytes"] <= rotated["MaxLDS"]
+    assert rotated["StoreVectorWidth"] == (1 if source_swap else 8)
+    # A scales pair consecutive tiles; B keeps its VWB4 scale group.
+    from tensilelite.Components.LocalRead import LocalReadMFMA
+    assert rotated["VectorWidthA"] == width
+    assert rotated["VectorWidthMXSA"] == 1
+    assert rotated["VectorWidthMXSB"] == 4
+    caps = {"HasWMMA_V3": True}
+    scale_a = LocalReadMFMA.getMxsTileSpanInfo(rotated, "MXSA", 0, caps)
+    assert scale_a == ({"vectorWidth": 1, "numGroups": 3} if tile == 6 else None)
+    assert LocalReadMFMA.getMxsTileSpanInfo(rotated, "MXSB", 1, caps) == {
+        "vectorWidth": 4, "numGroups": 1}
+    from tensilelite.SolutionStructs.segment_interleave import b_rotate_reason
+    assert b_rotate_reason(rotated._state) is None

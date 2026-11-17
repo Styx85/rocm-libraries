@@ -32,9 +32,12 @@ slice 3 (see resistance.md).
 
 import pytest
 
+from copy import deepcopy
+
 # `from ... import Solution` correctly yields the class (the package __init__
 # re-exports it). The module's static methods are reached via the class.
 from tensilelite.SolutionStructs.Solution import Solution
+from tensilelite.SolutionStructs import Naming
 
 pytestmark = pytest.mark.unit
 
@@ -51,6 +54,22 @@ def test_solution_construction(solution, solution_summary, snapshot):
 def test_all_solutions_constructed(solutions, snapshot):
     # Pin how many solutions the fixture yields + each one's name.
     assert {"count": len(solutions), "names": [str(s) for s in solutions]} == snapshot
+
+
+@pytest.mark.parametrize("naming", [
+    Naming.getKernelNameMin, Naming.getSolutionNameFull,
+    Naming.getKeyNoInternalArgs, Naming.getKernelCompileKey,
+])
+def test_adjacent_layout_keeps_default_names(solution, naming):
+    state = deepcopy(solution._state)
+    state.pop("WaveTileAdjacent", None)
+    original = naming(state, False)
+    state["WaveTileAdjacent"] = False
+    assert naming(state, False) == original
+    state["WaveTileAdjacent"] = True
+    adjacent = naming(state, False)
+    assert "_WTA1" in adjacent
+    assert adjacent.replace("_WTA1", "") == original
 
 
 # ===========================================================================

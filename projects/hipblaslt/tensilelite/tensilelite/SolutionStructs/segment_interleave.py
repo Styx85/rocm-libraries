@@ -110,6 +110,11 @@ WaveTileA by WaveTileB; portSplitA becomes portSplitB. W0-W3 are the four waves.
 Only the full and half WaveTile widths above are supported. The half-width case
 requires TDMSplit; without it, [2,2]/[4,1] need VWA == WaveTileA and [1,4] needs
 VWB == WaveTileB.
+
+WaveTileAdjacent maps adjacent lanes to consecutive A rows and keeps each wave
+inside one M half. The [2,2] non-TDMSplit reader can then use the two-component
+writer with VWA smaller than WaveTileA. B retains its original layout. MXSA
+retains its K-group split. Aligned footprints use paired buffers in this mode.
 """
 
 from ..Components.TDMFuse import tdmWaveComponents
@@ -169,7 +174,8 @@ def _mxsa_half_layout(state, paired=False):
             or not pt.get("MXBlockA") or pt.get("MXBlockFreeA", 1) != 1
             or state.get("MXScaleFormat") != "InMemorySwizzle"
             or state.get("TDMFuse") or state.get("TDMSplit")
-            or state.get("DirectToVgprMXSA") or not _coarse(state, "A")):
+            or state.get("DirectToVgprMXSA") or state.get("WaveTileAdjacent")
+            or not _coarse(state, "A")):
         return None
     # The TDM component IDs must map directly to the two reserved M-half slots.
     if tdmWaveComponents(state, "MXSA")[0] != 2:
@@ -426,9 +432,9 @@ def evaluate(state):
     if [wgM, wgN] != [2, 2]:
         return _no("MIWaveGroup unsupported")
 
-    # [2,2]: A must be coarse (VWA==WaveTileA) or port-split (VWA==WaveTileA/2, needs TDMSplit).
+    # [2,2]: A uses adjacent rows, coarse tiles, or TDMSplit port-split tiles.
     _portSplit = _port_split_a(state)
-    if not (_coarse(state, "A") or _portSplit):               return _no("A: VWA must be WaveTileA, or WaveTileA/2 with TDMSplit")
+    if not (_coarse(state, "A") or _portSplit or state.get("WaveTileAdjacent")):               return _no("A: VWA must be WaveTileA, or WaveTileA/2 with TDMSplit")
 
     bWhole = not _b_readable(state)
     offsets, end, aligned = _component_offsets(state, bWhole, _portSplit)

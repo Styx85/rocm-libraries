@@ -1546,6 +1546,7 @@
     'WaveSeparateGlobalReadA',
     'WaveSeparateGlobalReadB',
     'WaveSplitK',
+    'WaveTileAdjacent',
     'WavefrontSize',
     'WorkAssignment',
     'WorkGroup',
@@ -3138,6 +3139,14 @@
       'type': 'list',
     }),
     'WaveSplitK': dict({
+      'head': list([
+        False,
+        True,
+      ]),
+      'len': 2,
+      'type': 'list',
+    }),
+    'WaveTileAdjacent': dict({
       'head': list([
         False,
         True,

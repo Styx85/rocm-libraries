@@ -29,7 +29,7 @@ from rocisa.instruction import SMovB32, SWaitCnt, VOrB32, VPermB32, VLShiftLeftO
                             VMovB32, VMovB64, VLShiftRightB32, VCvtFP8toF16, VCvtScalePkFP8toF16, VCvtFP8toF32, VCvtScaleFP8toF16, VCvtScalePkFP8toF16, \
                             VCvtPkF32toBF16, VCvtBF16toFP32, PVCvtBF16toFP32, VDot2CF32BF16, VSubF32, VSwapB32, MFMAInstruction, \
                             VCmpClassF32, VCndMaskB32, \
-                            ECvtPkFP8toF32, ECvtF32toF16, DSLoadU8
+                            ECvtPkFP8toF32, ECvtF32toF16, DSLoadU8, DSLoadB32
 
 from ..Component import LocalRead
 from ..Common.MxScaleLayout import mxFreePhase, mxFreeTile
@@ -672,7 +672,9 @@ class LocalReadMFMA(LocalRead):
                 "localReadMX: invalid MX scale unit for tc=%s "
                 "(MatrixInstK=%s < MXBlock%s=%s => mxUnit=%s)"
                 % (tc, kernel["MatrixInstK"], mxTc, mxBlock, mxUnit))
-        stridePerRead    = instruction.blockWidth * bpr
+        adjacent = kernel.get("WaveTileAdjacent", False) and mxTc == "A"
+        readBytes = 4 if adjacent else instruction.blockWidth * bpr
+        stridePerRead    = readBytes
         tilePerRead      = stridePerRead // mxUnit
         if tilePerRead == 0:
             raise RuntimeError(
@@ -693,7 +695,7 @@ class LocalReadMFMA(LocalRead):
         # already holds its scale row (mxPhaseLraFixup); no vIdx immediate.
         mxPhase = mxFreePhase(kernel, tc)
         numReadsPerVector = int(vectorWidth // tilePerRead)
-        numVgpr           = int(ceil(instruction.blockWidth))
+        numVgpr           = int(ceil(readBytes / bpr))
         if mx2d:
             # One scale-row e8 (mxUnit bytes along K). VW tiles in that 128-row
             # group share it; do not load VW consecutive M e8s.
@@ -715,8 +717,8 @@ class LocalReadMFMA(LocalRead):
                 else:
                     valuiIdx = int(valufIdx)
                     readModule = imod.add(Module("LocalRead%s Valu%u"%(tc, valuiIdx)))
-                bytesThisLoad = int(instruction.blockWidth * bpr)
-                LocalReadX = instruction.getInst()
+                bytesThisLoad = int(readBytes)
+                LocalReadX = DSLoadB32 if adjacent else instruction.getInst()
                 if mx2d:
                     bytesThisLoad = mxUnit
                     if mxUnit == 1:
@@ -750,6 +752,9 @@ class LocalReadMFMA(LocalRead):
                 # wave-split), so the per-group stride is twice the per-vector stride.
                 blockStep = (2 * vIdx) if mxsTileSpan else vIdx
                 mStep = MIWaveGroupShape[tile01]
+                if adjacent:
+                    offset_val *= 16
+                    mStep = 16 * vectorWidth
                 if mxPhase:
                     pass
                 elif mx2d:
@@ -1808,7 +1813,9 @@ class LocalReadMFMA(LocalRead):
                                 _componentSplit = (_segOff.get("componentSplit", False)
                                              and _segOff.get("activeTC") == tc
                                              and numVectorsPerTile > 1)
-                                if _portSplit:
+                                if kernel.get("WaveTileAdjacent") and tc == "A":
+                                    vCols = (vIdx * numOffsets + oIdx) * 16 * vectorWidth
+                                elif _portSplit:
                                     # Drop the wave-group factor from the per-vIdx column stride so the
                                     # two vIdx stay within this port's segment; the A0->A1 segment jump
                                     # is on the wave stride, not here.
@@ -1839,7 +1846,8 @@ class LocalReadMFMA(LocalRead):
                                     perpStrideInv = permBlock // perpStride
                                     offset_val = (eIdx * (perpStrideInv) + vCols) * tileStride
                                 else:
-                                    offset_val = (eIdx + vCols) * tileStride
+                                    freeStep = 16 if kernel.get("WaveTileAdjacent") and tc == "A" else 1
+                                    offset_val = (eIdx * freeStep + vCols) * tileStride
 
                                 if kernel["ProblemType"]["Sparse"] != 0:
                                     if blocksPerTGroupSMFMA > 1:

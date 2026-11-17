@@ -446,6 +446,11 @@ validParameters = { # we need to make sure this matches develop
     # segment at the same time. Pair 1's accumulator halves are swapped back before the epilogue.
     #   0 = off (default), 1 = on.
     "LDSSegmentBRotate": [0, 1],
+    # gfx1250, WG[2,2]: adjacent lanes read consecutive A rows; each wave stays
+    # within one M half. B keeps its VectorWidthB layout and supports BRotate.
+    # Stores use each lane's results: auto width is 8 without SourceSwap, 1 with it.
+    # MX InMemorySwizzle scales follow the corresponding A/B rows.
+    "WaveTileAdjacent": [False, True],
     # Persistent loop: use the current tile's no-load-loop window to
     # issue the first global-read group for the next persistent tile. The
     # generated code keeps that first-PGR data durable and restores borrowed
