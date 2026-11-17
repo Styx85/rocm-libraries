@@ -828,6 +828,23 @@ TEST(SolutionState, RejectsARepeatedSummationIndex)
     }
 }
 
+TEST(SolutionState, RejectsASummationIndexThatIsAlsoACIndex)
+{
+    // NumIndicesC is 3, so index 1 is a C index. It is also a summation index.
+    StateOptions options;
+    options.summation = {3, 1};
+    try
+    {
+        build(options);
+        FAIL() << "IndicesSummation [3, 1] was accepted";
+    }
+    catch(std::runtime_error const& error)
+    {
+        EXPECT_NE(std::string(error.what()).find("inconsistent"), std::string::npos)
+            << error.what();
+    }
+}
+
 TEST(SolutionState, Gfx950DeviceNameSelectsTheChip)
 {
     StateOptions options;
