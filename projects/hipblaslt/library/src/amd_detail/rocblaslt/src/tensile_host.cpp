@@ -325,6 +325,33 @@ namespace
         return *(reinterpret_cast<const T*>(ptr));
     }
 
+    // The numeric host alpha, for predicates that reject zero. f16 compute
+    // keeps the caller's half storage after the f32 accumulation fallback.
+    // Other non-f32 storage stays at the default 1.
+    static double runtime_alpha_from_void_ptr(const void* ptr, rocisa::DataType type)
+    {
+        if(!ptr)
+            return 1.0;
+        switch(type)
+        {
+        case rocisa::DataType::Float:
+        case rocisa::DataType::XFloat32:
+        {
+            float value = 1.f;
+            std::memcpy(&value, ptr, sizeof(value));
+            return value;
+        }
+        case rocisa::DataType::Half:
+        {
+            hipblasLtHalf value{};
+            std::memcpy(&value, ptr, sizeof(value));
+            return static_cast<double>(static_cast<float>(value));
+        }
+        default:
+            return 1.0;
+        }
+    }
+
     // Classify alpha/beta via its storage type (alphaBetaType), not the matrix type.
     static TensileLite::ScalarValue get_scalar_value_from_void_ptr(const void*      ptr,
                                                                    rocisa::DataType type)
@@ -2301,6 +2328,7 @@ namespace
         else
             tensileProblem.setAlphaRestriction(
                 get_scalar_value_from_void_ptr(prob.alpha, scalarLoadType));
+        tensileProblem.setRuntimeAlpha(runtime_alpha_from_void_ptr(prob.alpha, scalarLoadType));
 
         tensileProblem.setBetaRestriction(
             get_scalar_value_from_void_ptr(prob.beta, scalarLoadType));
@@ -2654,6 +2682,7 @@ namespace
         else
             tensileProblem.setAlphaRestriction(
                 get_scalar_value_from_void_ptr(prob.alpha, scalarLoadType));
+        tensileProblem.setRuntimeAlpha(runtime_alpha_from_void_ptr(prob.alpha, scalarLoadType));
 
         tensileProblem.setBetaRestriction(
             get_scalar_value_from_void_ptr(prob.beta, scalarLoadType));

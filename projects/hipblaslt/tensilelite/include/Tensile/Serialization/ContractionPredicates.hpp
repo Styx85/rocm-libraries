@@ -86,6 +86,8 @@ namespace TensileLite
                      Base::template Pair<Predicates::Contraction::AlphaValue>(),
                      Base::template Pair<Predicates::Contraction::BetaValue>(),
                      Base::template Pair<Predicates::Contraction::BetaZero>(),
+                     Base::template Pair<Predicates::Contraction::AlphaNotZero>(),
+                     Base::template Pair<Predicates::Contraction::StrideFitsInUint32>(),
                      Base::template Pair<Predicates::Contraction::BetaOne>(),
                      Base::template Pair<Predicates::Contraction::HighPrecisionAccumulateEqual>(),
                      Base::template Pair<Predicates::Contraction::KernelLanguageCompatible>(),
@@ -317,6 +319,18 @@ namespace TensileLite
         template <typename IO>
         struct MappingTraits<Predicates::Contraction::BetaZero, IO>
             : public AutoMappingTraits<Predicates::Contraction::BetaZero, IO>
+        {
+        };
+
+        template <typename IO>
+        struct MappingTraits<Predicates::Contraction::AlphaNotZero, IO>
+            : public AutoMappingTraits<Predicates::Contraction::AlphaNotZero, IO>
+        {
+        };
+
+        template <typename IO>
+        struct MappingTraits<Predicates::Contraction::StrideFitsInUint32, IO>
+            : public AutoMappingTraits<Predicates::Contraction::StrideFitsInUint32, IO>
         {
         };
 
