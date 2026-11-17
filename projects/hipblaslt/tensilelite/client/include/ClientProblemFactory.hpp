@@ -139,10 +139,18 @@ namespace TensileLite
             rocisa::DataType                 m_activationComputeType;
             std::vector<std::vector<size_t>> m_problemSizes;
             std::vector<std::vector<size_t>> m_fullProblemSizes;
-            ContractionProblemGemm::FreeIndex m_splitFree{};
+            // The dimension --split-devices cuts, as its position in each tensor (npos = the tensor
+            // does not have it: B for an M split, A for an N split).
+            struct SplitAxis
+            {
+                static constexpr size_t npos = static_cast<size_t>(-1);
+                size_t                  a = npos, b = npos, c = 0, d = 0;
+            };
+            SplitAxis                         m_splitAxis{};
             size_t                            m_sliceIdx   = 0;
             size_t                            m_sliceCount = 1;
             bool                              m_splitN     = false;
+            bool                              m_splitBatch = false;
             std::vector<std::unique_ptr<ClientProblemFactory>> m_slices;
             // Index of each problem in m_problems, built once with the slices (read-only after
             // that, so devices can look their slice up concurrently).

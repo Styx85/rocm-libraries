@@ -110,6 +110,12 @@ def test_the_split_options_are_written(tmp_path, _restore_gp):
     assert options["split-placement"] == "RRRR"
 
 
+def test_the_batch_split_is_written(tmp_path, _restore_gp):
+    options = _options(_write_ini(tmp_path, SplitDevices=2, SplitDim="B"))
+    assert options["split-devices"] == "2"
+    assert options["split-dim"] == "B"
+
+
 def test_each_tensor_has_its_own_placement(tmp_path, _restore_gp):
     options = _options(
         _write_ini(

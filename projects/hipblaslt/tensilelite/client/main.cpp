@@ -232,8 +232,8 @@ namespace TensileLite
                 ("swizzle-tensor-a",         po::value<bool>()->default_value(false), "Swizzle input tensor A.")
                 ("swizzle-tensor-b",         po::value<bool>()->default_value(false), "Swizzle input tensor B.")
                 ("fused-a2a",                po::value<FusedA2A>()->default_value(FusedA2A::Disabled), "Fused A2A mode: Disabled, GemmA2A (all-to-all PUSH from the GEMM epilogue) or A2AGemm (B's K shards gathered from the peers into a2aBuf one shard at a time).")
-                ("split-devices",          po::value<int>()->default_value(1), "Split each problem across N consecutive devices (device-idx .. device-idx+N-1), one stream each, and run the slices concurrently. Devices 0..N-2 get size/N, the last device gets the rest. --split-dim M: A is split, B replicated. --split-dim N: B is split, A replicated. Each device writes its slice into its own full-size D at the slice's final offset (nothing goes to a peer); the slices are read back and validated after the timed run. Reported time is the slowest device; reported GFlops are for the full problem. Needs the all-solutions run (no --best-solution). For partitioned GPUs (e.g. NPS2: N=2). 1 = off.")
-                ("split-dim",              po::value<std::string>()->default_value("M"), "Dimension --split-devices splits: M or N.")
+                ("split-devices",          po::value<int>()->default_value(1), "Split each problem across N consecutive devices (device-idx .. device-idx+N-1), one stream each, and run the slices concurrently. Devices 0..N-2 get size/N, the last device gets the rest. --split-dim M: A is split, B replicated. --split-dim N: B is split, A replicated. --split-dim B: the batch is split (A, B, C and D). Each device writes its slice into its own full-size D at the slice's final offset (nothing goes to a peer); the slices are read back and validated after the timed run. Reported time is the slowest device; reported GFlops are for the full problem. Needs the all-solutions run (no --best-solution). For partitioned GPUs (e.g. NPS2: N=2). 1 = off.")
+                ("split-dim",              po::value<std::string>()->default_value("M"), "Dimension --split-devices splits: M, N or B (the batch).")
                 ("split-placement",        po::value<std::string>()->default_value("RRRR"), "With --split-devices, one letter each for A, B, C, D: R = a copy on every device, S = one copy that the other devices access over peer access. A shared A, B or C is the copy of the last device, whose slice is the largest; a shared D is the one of device-idx, and every device writes its slice into it.")
                 ("mx-scale-format",          po::value<int>()->default_value(0), "MX scale data format (0=none, 1=pre-swizzle for GPU kernel layout)")
                 ("activation-compute-type",  po::value<rocisa::DataType>()->default_value(rocisa::DataType::None), "Activation compute type.")
@@ -967,8 +967,15 @@ int main(int argc, const char* argv[])
         if(splitM < 1)
             throw std::runtime_error("--split-devices must be >= 1");
         if(splitM > 1 && args["split-dim"].as<std::string>() != "M"
-           && args["split-dim"].as<std::string>() != "N")
-            throw std::runtime_error("--split-dim must be M or N");
+           && args["split-dim"].as<std::string>() != "N"
+           && args["split-dim"].as<std::string>() != "B")
+            throw std::runtime_error("--split-dim must be M, N or B");
+        // A batch split gives every device different batches of A, B and C, so none of them can
+        // be one copy that the devices share (a shared D is fine: each writes its own batches).
+        if(splitM > 1 && args["split-dim"].as<std::string>() == "B"
+           && args["split-placement"].as<std::string>().substr(0, 3).find('S') != std::string::npos)
+            throw std::runtime_error(
+                "--split-dim B needs replicated A, B and C (--split-placement R R R x)");
         if(splitM > 1 && fusedA2A)
             throw std::runtime_error("--split-devices cannot be combined with --fused-a2a");
         if(splitM > 1 && args["use-user-args"].as<bool>())
