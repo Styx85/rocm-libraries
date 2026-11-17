@@ -6,6 +6,10 @@ Full documentation for MIOpen is available [here](https://rocm.docs.amd.com/proj
 ## MIOpen 3.6.3 for ROCm 10.3.0
 
 ### Resolved Issues
+* [BatchNorm] Fixed `miopenStatusUnknownError` from BatchNorm kernels (`MIOpenBatchNorm*`) when
+  runtime compilation found a host C++ standard library the device compiler cannot parse, for
+  example libstdc++ 12 headers combined with GCC 13's `bits/c++config.h`. Runtime-compiled kernels
+  no longer include the host `<type_traits>`, `<utility>` or `<initializer_list>`.
 * [Reduce] Fixed `miopenReduceTensor` returning inf, NaN or imprecise results above 1024 reduced
   elements per output when the compute type is wider than the input type (for example FP16 `AVG`
   with FP32 compute). The workspace size now follows the compute type: allocate the workspace with the

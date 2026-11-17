@@ -18,6 +18,8 @@
 
 #include <atomic>
 #include <chrono>
+#include <filesystem>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -154,7 +156,52 @@ void RunSelfContainedKernel(miopen::Handle& h, const std::string& params)
     EXPECT_EQ(out[3], 11u) << "forwarded rvalue";
 }
 
+// A directory whose <type_traits>, <utility> and <initializer_list> fail to
+// compile, standing in for a host standard library the device compiler cannot
+// parse (ROCM-30176: libstdc++ 12 headers mixed with GCC 13's bits/c++config.h
+// failed inside <type_traits>). Searched first via -isystem, so any kernel
+// header that still reaches the host STL fails the compile.
+class BrokenHostStlDir
+{
+public:
+    BrokenHostStlDir()
+        : path_(std::filesystem::temp_directory_path() /
+                ("miopen_gtest_broken_stl_" + NonceOption().substr(NonceOption().rfind('=') + 1)))
+    {
+        std::filesystem::create_directories(path_);
+        for(const char* header : {"type_traits", "utility", "initializer_list"})
+            std::ofstream(path_ / header)
+                << "#error \"runtime-compiled kernel reached the host STL\"\n";
+    }
+    ~BrokenHostStlDir()
+    {
+        std::error_code ec;
+        std::filesystem::remove_all(path_, ec);
+    }
+    BrokenHostStlDir(const BrokenHostStlDir&)            = delete;
+    BrokenHostStlDir& operator=(const BrokenHostStlDir&) = delete;
+
+    // Joined form: MIOpen glues a separate "-isystem <dir>" pair into one
+    // argument, which HIPRTC silently ignores.
+    std::string IsystemOption() const { return "-isystem" + path_.string(); }
+
+private:
+    std::filesystem::path path_;
+};
+
 } // namespace
+
+// Regression test for ROCM-30176: the kernel headers must not depend on the
+// host STL being parseable, even where one is reachable (so this runs on Linux
+// comgr too, unlike the -nostdinc test below).
+TEST(CPU_HipRtcSelfContained_NONE, RtIgnoresUnusableHostStl)
+{
+    auto&& h = get_handle();
+    RecordProperty("device", h.GetTargetProperties().Name());
+
+    const BrokenHostStlDir broken_stl;
+    RunSelfContainedKernel(h, broken_stl.IsystemOption());
+}
 
 TEST(CPU_HipRtcSelfContained_NONE, RtCompilesInlineKernelWithoutHostStl)
 {
