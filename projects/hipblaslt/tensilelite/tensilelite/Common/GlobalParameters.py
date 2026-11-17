@@ -350,8 +350,7 @@ globalParameters["EnableMarker"] = False  # Enable TensileLite markers
 globalParameters["UseUserArgs"] = False
 
 # Run each problem split across N consecutive devices (e.g. the two partitions of an NPS2 card).
-# SplitDim M splits A and keeps B replicated; N splits B and replicates A; B splits the batch (A, B, C
-# and D). Every device writes its slice of D at the slice's final offset.
+# SplitDim M splits A (M x K); N splits B (N x K); B splits the batch. Every device writes its slice of D at the slice's final offset.
 globalParameters["SplitDevices"] = 1
 globalParameters["SplitDim"] = "M"
 # Where each tensor lives when split: "Replicated" (a copy on every device, the default) or
